@@ -77,6 +77,12 @@ TEMPORARY TABLESPACE TEMP;
 GRANT CREATE SESSION    TO CYTECH_ADMIN;
 GRANT CYTECH_ADMIN_ROLE TO CYTECH_ADMIN;
 
+-- Privileges necessaires pour les packages et triggers de replication
+GRANT CREATE PROCEDURE TO CYTECH_CERGY;
+GRANT CREATE PROCEDURE TO CYTECH_PAU;
+GRANT CREATE TRIGGER   TO CYTECH_CERGY;
+GRANT CREATE TRIGGER   TO CYTECH_PAU;
+
 -- ============================================================
 -- 3. VERIFICATION
 -- ============================================================

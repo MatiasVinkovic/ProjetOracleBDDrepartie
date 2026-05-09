@@ -41,8 +41,8 @@ Ce projet repense une partie de la base de données de **GLPI** (Gestionnaire Li
 │                       Oracle FREEPDB1                               │
 │                                                                     │
 │   ┌──────────────────────┐        ┌──────────────────────┐          │
-│   │    CYTECH_CERGY       │        │     CYTECH_PAU        │          │
-│   │  Schéma site Cergy    │        │  Schéma site Pau      │          │
+│   │    CYTECH_CERGY      │        │     CYTECH_PAU       │          │
+│   │  Schéma site Cergy   │        │  Schéma site Pau     │          │
 │   │                      │        │                      │          │
 │   │  13 tables           │◄──────►│  12 tables           │          │
 │   │  1 DB link → PAU     │DB LINK │  1 DB link → CERGY   │          │
@@ -50,16 +50,16 @@ Ce projet repense une partie de la base de données de **GLPI** (Gestionnaire Li
 │   │  13 index functiels  │        │  12 index fonctionels│          │
 │   │  MAINTENANCE_TICKET  │        │  V_CERGY_TICKET_MIN  │          │
 │   └──────────────────────┘        └──────────────────────┘          │
-│              ▲                               ▲                       │
-│              │   GRANT SELECT/DML            │                       │
-│              └─────────────┬─────────────────┘                       │
-│                            │                                         │
-│                   ┌────────▼────────┐                                │
-│                   │  CYTECH_ADMIN   │                                │
-│                   │  (user global)  │                                │
-│                   │  CYTECH_ADMIN_ROLE                               │
-│                   │  └ CYTECH_READER│                                │
-│                   └─────────────────┘                                │
+│              ▲                               ▲                      │
+│              │   GRANT SELECT/DML            │                      │
+│              └─────────────┬─────────────────┘                      │
+│                            │                                        │
+│                   ┌────────▼────────┐                               │
+│                   │  CYTECH_ADMIN   │                               │
+│                   │  (user global)  │                               │
+│                   │ CYTECH_ADMIN_ROLE                               │
+│                   │  └ CYTECH_READER│                               │
+│                   └─────────────────┘                           s    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -344,11 +344,22 @@ INSERT sur SITE (Cergy)
     → flag g_replicating = FALSE
 ```
 
-### Package de contrôle (à créer sur les 2 sites)
+### Package de contrôle (sur les 2 sites)
+
+Le package expose une procédure `set_replicating` appelable à distance via DB link, ce qui permet de mettre le flag à `TRUE` dans la session distante **avant** le DML — évitant toute boucle, y compris pour les UPDATE et DELETE.
 
 ```sql
 CREATE OR REPLACE PACKAGE PKG_REPLICATION AS
   g_replicating BOOLEAN := FALSE;
+  PROCEDURE set_replicating(p_val BOOLEAN);
+END PKG_REPLICATION;
+/
+
+CREATE OR REPLACE PACKAGE BODY PKG_REPLICATION AS
+  PROCEDURE set_replicating(p_val BOOLEAN) IS
+  BEGIN
+    g_replicating := p_val;
+  END;
 END PKG_REPLICATION;
 /
 ```
@@ -356,51 +367,44 @@ END PKG_REPLICATION;
 ### Trigger de réplication (exemple sur SITE, côté Cergy)
 
 ```sql
-CREATE OR REPLACE TRIGGER TRG_REPLICATE_SITE
-AFTER INSERT OR UPDATE OR DELETE ON SITE
-FOR EACH ROW
+CREATE OR REPLACE TRIGGER TRG_REP_SITE
+AFTER INSERT OR UPDATE OR DELETE ON SITE FOR EACH ROW
 BEGIN
   IF NOT PKG_REPLICATION.g_replicating THEN
     PKG_REPLICATION.g_replicating := TRUE;
-
+    PKG_REPLICATION.set_replicating@LNK_PAU(TRUE);  -- bloque le trigger PAU
     IF INSERTING THEN
       INSERT INTO SITE@LNK_PAU (site_id, site_code, site_name, city, is_active)
       VALUES (:NEW.site_id, :NEW.site_code, :NEW.site_name, :NEW.city, :NEW.is_active);
-
     ELSIF UPDATING THEN
       UPDATE SITE@LNK_PAU
-      SET site_code = :NEW.site_code,
-          site_name = :NEW.site_name,
-          city      = :NEW.city,
-          is_active = :NEW.is_active
+      SET site_code = :NEW.site_code, site_name = :NEW.site_name,
+          city = :NEW.city, is_active = :NEW.is_active
       WHERE site_id = :OLD.site_id;
-
     ELSIF DELETING THEN
       DELETE FROM SITE@LNK_PAU WHERE site_id = :OLD.site_id;
     END IF;
-
+    PKG_REPLICATION.set_replicating@LNK_PAU(FALSE);
     PKG_REPLICATION.g_replicating := FALSE;
   END IF;
-EXCEPTION
-  WHEN OTHERS THEN
-    PKG_REPLICATION.g_replicating := FALSE;
-    RAISE_APPLICATION_ERROR(-20001, 'Erreur réplication SITE : ' || SQLERRM);
+EXCEPTION WHEN OTHERS THEN
+  PKG_REPLICATION.g_replicating := FALSE;
+  BEGIN PKG_REPLICATION.set_replicating@LNK_PAU(FALSE); EXCEPTION WHEN OTHERS THEN NULL; END;
+  RAISE_APPLICATION_ERROR(-20001, 'Replication SITE Cergy->Pau : ' || SQLERRM);
 END;
 /
 ```
 
-### Tables à couvrir
-
-Ce trigger est à dupliquer (en version miroir) pour les 6 tables répliquées :
+### Tables couvertes
 
 | Table | Trigger Cergy → Pau | Trigger Pau → Cergy |
 |---|---|---|
-| `SITE` | À créer | À créer |
-| `PERSON_ROLE` | À créer | À créer |
-| `DEVICE_TYPE` | À créer | À créer |
-| `OS_FAMILY` | À créer | À créer |
-| `OS_VERSION` | À créer | À créer |
-| `PERIPHERAL_TYPE` | À créer | À créer |
+| `SITE` | ✅ `TRG_REP_SITE` | ✅ `TRG_REP_SITE` |
+| `PERSON_ROLE` | ✅ `TRG_REP_PERSON_ROLE` | ✅ `TRG_REP_PERSON_ROLE` |
+| `DEVICE_TYPE` | ✅ `TRG_REP_DEVICE_TYPE` | ✅ `TRG_REP_DEVICE_TYPE` |
+| `OS_FAMILY` | ✅ `TRG_REP_OS_FAMILY` | ✅ `TRG_REP_OS_FAMILY` |
+| `OS_VERSION` | ✅ `TRG_REP_OS_VERSION` | ✅ `TRG_REP_OS_VERSION` |
+| `PERIPHERAL_TYPE` | ✅ `TRG_REP_PERIPHERAL_TYPE` | ✅ `TRG_REP_PERIPHERAL_TYPE` |
 
 ---
 
@@ -410,7 +414,8 @@ Ce trigger est à dupliquer (en version miroir) pour les 6 tables répliquées :
 |---|---|---|
 | `01_setup_cergy.sql` | `SYS AS SYSDBA` puis `CYTECH_CERGY` | Tablespaces, user, tables, index, données, DB link, vue |
 | `02_setup_pau.sql` | `SYS AS SYSDBA` puis `CYTECH_PAU` | Idem pour Pau |
-| `03_setup_admin.sql` | `SYS AS SYSDBA` dans `FREEPDB1` | Rôles `CYTECH_READER` et `CYTECH_ADMIN_ROLE`, user `CYTECH_ADMIN` |
+| `03_setup_admin.sql` | `SYS AS SYSDBA` dans `FREEPDB1` | Rôles, user `CYTECH_ADMIN`, grants `CREATE PROCEDURE/TRIGGER` |
+| `04_replication.sql` | `CYTECH_CERGY` (CONNECT interne) | `PKG_REPLICATION` + 12 triggers de réplication (6 tables × 2 sites) |
 
 ---
 
@@ -429,6 +434,8 @@ Ce trigger est à dupliquer (en version miroir) pour les 6 tables répliquées :
 - [x] Rôles hiérarchiques (`CYTECH_READER` ⊆ `CYTECH_ADMIN_ROLE`)
 - [x] Données de test insérées sur les 2 sites
 - [x] Vérification complète de l'installation (0 objet invalide, 0 pollution SYS)
+- [x] `PKG_REPLICATION` déployé sur les 2 sites (avec `set_replicating` pour anti-boucle cross-session)
+- [x] 12 triggers de réplication (6 tables × 2 sites) — `04_replication.sql`
 
 ---
 
@@ -436,7 +443,7 @@ Ce trigger est à dupliquer (en version miroir) pour les 6 tables répliquées :
 
 ### Obligatoire (critères d'évaluation)
 
-- [ ] **Triggers de réplication PL/SQL** : package `PKG_REPLICATION` + 6 paires de triggers (une par table répliquée, sur les 2 sites)
+- [x] **Triggers de réplication PL/SQL** : `PKG_REPLICATION` + 6 paires de triggers — voir `04_replication.sql`
 - [ ] **Génération d'un jeu de test conséquent** en PL/SQL (procédure qui insère N personnes, M équipements, K tickets de façon automatique avec `DBMS_RANDOM`)
 - [ ] **Requêtes complexes de test de performance** : jointures multi-tables, requêtes distribuées avec `@LNK_*`, comparaison avec/sans index
 - [ ] **Plan de requêtes** : `EXPLAIN PLAN FOR` + `SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY)` sur les requêtes clés
@@ -469,20 +476,53 @@ Ce trigger est à dupliquer (en version miroir) pour les 6 tables répliquées :
 ### Lancement
 
 ```bash
-# 1. Script Cergy (crée tablespace, user, tables, données)
-sqlplus / as sysdba
-ALTER SESSION SET CONTAINER = FREEPDB1;
-@/tmp/01_setup_cergy.sql
+# 0. Démarrer Oracle (Docker)
+docker run -d --name oracle-xe -p 1521:1521 -e ORACLE_PASSWORD=oracle gvenzl/oracle-xe:21-slim
+# Attendre "DATABASE IS READY TO USE!" dans : docker logs -f oracle-xe
 
-# 2. Script Pau (même structure, données Pau)
-CONNECT / AS SYSDBA
-ALTER SESSION SET CONTAINER = FREEPDB1;
-@/tmp/02_setup_pau.sql
+# 0b. Bootstrap SYSDBA : tablespaces + users (à faire une seule fois)
+docker exec -it oracle-xe sqlplus sys/oracle@//localhost:1521/FREEPDB1 as sysdba
+# Coller les CREATE TABLESPACE et CREATE USER (voir ci-dessous)
 
-# 3. Script Admin (rôles et user global)
-CONNECT / AS SYSDBA
+# 1. Copier les scripts dans le container
+docker cp 01_setup_cergy.sql oracle-xe:/tmp/
+docker cp 02_setup_pau.sql   oracle-xe:/tmp/
+docker cp 03_setup_admin.sql oracle-xe:/tmp/
+docker cp 04_replication.sql oracle-xe:/tmp/
+
+# 2. Script Cergy
+docker exec -it oracle-xe sqlplus CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1 @/tmp/01_setup_cergy.sql
+
+# 3. Script Pau
+docker exec -it oracle-xe sqlplus CYTECH_PAU/pau2026@//localhost:1521/FREEPDB1 @/tmp/02_setup_pau.sql
+
+# 3b. Recréer la vue Cergy (dépendance circulaire avec Pau)
+# Se connecter en CYTECH_CERGY et exécuter :
+# CREATE OR REPLACE VIEW V_PAU_DEVICE_MIN AS
+# SELECT device_id, asset_tag, device_name, device_status FROM DEVICE@LNK_PAU;
+
+# 4. Script Admin (rôles + grants CREATE PROCEDURE/TRIGGER)
+docker exec -it oracle-xe bash -c "sqlplus / as sysdba @/tmp/03_setup_admin.sql"
+
+# 5. Script réplication (PKG_REPLICATION + 12 triggers)
+docker exec -it oracle-xe bash -c "sqlplus CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1 @/tmp/04_replication.sql"
+```
+
+#### Bootstrap SYSDBA (étape 0b)
+
+```sql
 ALTER SESSION SET CONTAINER = FREEPDB1;
-@/tmp/03_setup_admin.sql
+CREATE TABLESPACE DATA_CERGY DATAFILE 'data_cergy.dbf' SIZE 50M AUTOEXTEND ON NEXT 10M MAXSIZE 500M EXTENT MANAGEMENT LOCAL SEGMENT SPACE MANAGEMENT AUTO;
+CREATE TABLESPACE IDX_CERGY  DATAFILE 'idx_cergy.dbf'  SIZE 20M AUTOEXTEND ON NEXT 5M  MAXSIZE 200M EXTENT MANAGEMENT LOCAL SEGMENT SPACE MANAGEMENT AUTO;
+CREATE TABLESPACE DATA_PAU   DATAFILE 'data_pau.dbf'   SIZE 50M AUTOEXTEND ON NEXT 10M MAXSIZE 500M EXTENT MANAGEMENT LOCAL SEGMENT SPACE MANAGEMENT AUTO;
+CREATE TABLESPACE IDX_PAU    DATAFILE 'idx_pau.dbf'    SIZE 20M AUTOEXTEND ON NEXT 5M  MAXSIZE 200M EXTENT MANAGEMENT LOCAL SEGMENT SPACE MANAGEMENT AUTO;
+
+CREATE USER CYTECH_CERGY IDENTIFIED BY cergy2026 DEFAULT TABLESPACE DATA_CERGY TEMPORARY TABLESPACE TEMP QUOTA UNLIMITED ON DATA_CERGY QUOTA UNLIMITED ON IDX_CERGY;
+GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SYNONYM, CREATE DATABASE LINK, CREATE SEQUENCE TO CYTECH_CERGY;
+
+CREATE USER CYTECH_PAU IDENTIFIED BY pau2026 DEFAULT TABLESPACE DATA_PAU TEMPORARY TABLESPACE TEMP QUOTA UNLIMITED ON DATA_PAU QUOTA UNLIMITED ON IDX_PAU;
+GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SYNONYM, CREATE DATABASE LINK, CREATE SEQUENCE TO CYTECH_PAU;
+EXIT
 ```
 
 ### Vérification rapide

@@ -59,7 +59,7 @@ Ce projet repense une partie de la base de données de **GLPI** (Gestionnaire Li
 │                   │  (user global)  │                               │
 │                   │ CYTECH_ADMIN_ROLE                               │
 │                   │  └ CYTECH_READER│                               │
-│                   └─────────────────┘                           s    │
+│                   └─────────────────┘                               │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -416,6 +416,8 @@ END;
 | `02_setup_pau.sql` | `SYS AS SYSDBA` puis `CYTECH_PAU` | Idem pour Pau |
 | `03_setup_admin.sql` | `SYS AS SYSDBA` dans `FREEPDB1` | Rôles, user `CYTECH_ADMIN`, grants `CREATE PROCEDURE/TRIGGER` |
 | `04_replication.sql` | `CYTECH_CERGY` (CONNECT interne) | `PKG_REPLICATION` + 12 triggers de réplication (6 tables × 2 sites) |
+| `05_generate_data.sql` | `CYTECH_CERGY` (CONNECT interne) | `PROC_GENERATE_DATA` — 50 personnes, 100 devices, 100 périphériques, 20 tickets par site |
+| `06_performance_queries.sql` | `CYTECH_CERGY` | 5 requêtes avec `EXPLAIN PLAN` : index vs full scan, jointures, requêtes distribuées |
 
 ---
 
@@ -436,6 +438,9 @@ END;
 - [x] Vérification complète de l'installation (0 objet invalide, 0 pollution SYS)
 - [x] `PKG_REPLICATION` déployé sur les 2 sites (avec `set_replicating` pour anti-boucle cross-session)
 - [x] 12 triggers de réplication (6 tables × 2 sites) — `04_replication.sql`
+- [x] Génération de données aléatoires via `PROC_GENERATE_DATA` (`DBMS_RANDOM`) — `05_generate_data.sql`
+  - Cergy : 50 personnes, 100 devices, 100 périphériques, 20 tickets
+  - Pau   : 50 personnes, 100 devices, 100 périphériques
 
 ---
 
@@ -444,9 +449,13 @@ END;
 ### Obligatoire (critères d'évaluation)
 
 - [x] **Triggers de réplication PL/SQL** : `PKG_REPLICATION` + 6 paires de triggers — voir `04_replication.sql`
-- [ ] **Génération d'un jeu de test conséquent** en PL/SQL (procédure qui insère N personnes, M équipements, K tickets de façon automatique avec `DBMS_RANDOM`)
-- [ ] **Requêtes complexes de test de performance** : jointures multi-tables, requêtes distribuées avec `@LNK_*`, comparaison avec/sans index
-- [ ] **Plan de requêtes** : `EXPLAIN PLAN FOR` + `SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY)` sur les requêtes clés
+- [x] **Génération d'un jeu de test conséquent** : `PROC_GENERATE_DATA` avec `DBMS_RANDOM` — voir `05_generate_data.sql`
+- [x] **Requêtes complexes de test de performance** + **plans d'exécution** — voir `06_performance_queries.sql`
+  - Q1 : tickets ouverts — comparaison index (`IDX_TICKET_STATUS`) vs full scan forcé
+  - Q2 : jointure 7 tables locale (DEVICE + PERSON + ROLE + TYPE + OS + ROOM + BUILDING)
+  - Q3 : `UNION ALL` distribué Cergy + Pau via `LNK_PAU`
+  - Q4 : agrégation devices par type sur les 2 sites
+  - Q5 : devices `IN_REPAIR` sur les 2 sites via DB link
 - [ ] **Rapport** : reverse engineering GLPI, modélisation UML/schéma relationnel, résultats de performance avec graphiques
 
 ### Fortement recommandé
@@ -506,6 +515,14 @@ docker exec -it oracle-xe bash -c "sqlplus / as sysdba @/tmp/03_setup_admin.sql"
 
 # 5. Script réplication (PKG_REPLICATION + 12 triggers)
 docker exec -it oracle-xe bash -c "sqlplus CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1 @/tmp/04_replication.sql"
+
+# 6. Génération de données aléatoires
+docker cp 05_generate_data.sql oracle-xe:/tmp/
+docker exec -it oracle-xe bash -c "sqlplus CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1 @/tmp/05_generate_data.sql"
+
+# 7. Requêtes de performance + EXPLAIN PLAN
+docker cp 06_performance_queries.sql oracle-xe:/tmp/
+docker exec -it oracle-xe bash -c "sqlplus CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1 @/tmp/06_performance_queries.sql"
 ```
 
 #### Bootstrap SYSDBA (étape 0b)

@@ -418,6 +418,7 @@ END;
 | `04_replication.sql` | `CYTECH_CERGY` (CONNECT interne) | `PKG_REPLICATION` + 12 triggers de réplication (6 tables × 2 sites) |
 | `05_generate_data.sql` | `CYTECH_CERGY` (CONNECT interne) | `PROC_GENERATE_DATA` — 50 personnes, 100 devices, 100 périphériques, 20 tickets par site |
 | `06_performance_queries.sql` | `CYTECH_CERGY` | 5 requêtes avec `EXPLAIN PLAN` : index vs full scan, jointures, requêtes distribuées |
+| `07_audit_trigger.sql` | `CYTECH_CERGY` (CONNECT interne) | Table `DEVICE_AUDIT` + séquence + trigger `TRG_AUDIT_DEVICE` sur les 2 sites |
 
 ---
 
@@ -470,7 +471,7 @@ END;
 
 - [ ] Cluster sur `DEVICE` et `PERIPHERAL` (co-localisation par `device_id`)
 - [ ] Partitionnement par `device_status` ou `purchase_date`
-- [ ] Trigger d'audit des modifications sur `DEVICE`
+- [x] Trigger d'audit des modifications sur `DEVICE` — table `DEVICE_AUDIT` + `TRG_AUDIT_DEVICE` sur les 2 sites — voir `07_audit_trigger.sql`
 
 ---
 

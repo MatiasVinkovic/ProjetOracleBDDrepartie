@@ -1,2 +1,8 @@
 MiniProjetSIE2026.pdf
 arret-demarrage_sql.md
+designingWork
+.DS_Store
+.idea/
+*.iml
+*.log
+*.tmp

@@ -189,6 +189,9 @@ CREATE TABLE DEVICE_ASSIGNMENT (
 ) TABLESPACE DATA_CERGY;
 
 -- Table supplementaire geree uniquement par Cergy
+-- site_id indique le site du device concerne (1=Cergy, 2=Pau)
+-- device_id n'a pas de FK declarative : le device peut etre sur Pau (LNK_PAU)
+-- La validation cross-site est faite par PROC_CREATE_TICKET dans 08_plsql_complement.sql
 CREATE TABLE MAINTENANCE_TICKET (
   ticket_id             NUMBER         CONSTRAINT PK_MAINTENANCE_TICKET PRIMARY KEY,
   site_id               NUMBER         NOT NULL,
@@ -200,10 +203,9 @@ CREATE TABLE MAINTENANCE_TICKET (
   opened_at             DATE           NOT NULL,
   closed_at             DATE,
   CONSTRAINT FK_TICKET_SITE FOREIGN KEY (site_id) REFERENCES SITE(site_id),
-  CONSTRAINT FK_TICKET_DEVICE FOREIGN KEY (device_id) REFERENCES DEVICE(device_id),
   CONSTRAINT FK_TICKET_OPENED_BY FOREIGN KEY (opened_by_person_id) REFERENCES PERSON(person_id),
   CONSTRAINT FK_TICKET_TECH FOREIGN KEY (technician_id) REFERENCES PERSON(person_id),
-  CONSTRAINT CK_TICKET_SITE CHECK (site_id = 1),
+  CONSTRAINT CK_TICKET_SITE CHECK (site_id IN (1, 2)),
   CONSTRAINT CK_TICKET_STATUS CHECK (ticket_status IN ('OPEN','IN_PROGRESS','CLOSED')),
   CONSTRAINT CK_TICKET_DATES CHECK (closed_at IS NULL OR closed_at >= opened_at)
 ) TABLESPACE DATA_CERGY;
@@ -216,8 +218,12 @@ CREATE INDEX IDX_DEVICE_ROOM ON DEVICE(room_id) TABLESPACE IDX_CERGY;
 CREATE INDEX IDX_DEVICE_PERSON ON DEVICE(assigned_person_id) TABLESPACE IDX_CERGY;
 CREATE INDEX IDX_DEVICE_TYPE ON DEVICE(device_type_id) TABLESPACE IDX_CERGY;
 CREATE INDEX IDX_PERIPHERAL_DEVICE ON PERIPHERAL(assigned_device_id) TABLESPACE IDX_CERGY;
-CREATE INDEX IDX_ASSIGN_DEVICE ON DEVICE_ASSIGNMENT(device_id) TABLESPACE IDX_CERGY;
-CREATE INDEX IDX_TICKET_STATUS ON MAINTENANCE_TICKET(ticket_status) TABLESPACE IDX_CERGY;
+CREATE INDEX IDX_ASSIGN_DEVICE  ON DEVICE_ASSIGNMENT(device_id)  TABLESPACE IDX_CERGY;
+CREATE INDEX IDX_ASSIGN_PERSON  ON DEVICE_ASSIGNMENT(person_id)  TABLESPACE IDX_CERGY;
+CREATE INDEX IDX_TICKET_STATUS  ON MAINTENANCE_TICKET(ticket_status)  TABLESPACE IDX_CERGY;
+CREATE INDEX IDX_TICKET_SITE    ON MAINTENANCE_TICKET(site_id)        TABLESPACE IDX_CERGY;
+
+CREATE SEQUENCE SEQ_TICKET_ID START WITH 100 INCREMENT BY 1 NOCACHE;
 
 -- ============================================================
 -- 7. DONNEES DE REFERENCE (MEMES IDS SUR CERGY ET PAU)
@@ -290,11 +296,60 @@ COMMIT;
 -- Remplacer l'adresse / service si necessaire dans votre installation Oracle.
 CREATE DATABASE LINK LNK_PAU
 CONNECT TO CYTECH_PAU IDENTIFIED BY pau2026
-USING '//localhost:1521/FREEPDB1';
+USING '//localhost:1521/XEPDB1';
 
 -- Vue simple pour verifier l'acces distant
 CREATE OR REPLACE VIEW V_PAU_DEVICE_MIN AS
 SELECT device_id, asset_tag, device_name, device_status
 FROM DEVICE@LNK_PAU;
+
+-- ============================================================
+-- 10. PROCEDURE TICKET CROSS-SITE (Cergy = gestionnaire central)
+-- ============================================================
+-- Point d'entree unique pour creer un ticket, quel que soit le site du device.
+-- Valide que le device existe sur le bon site avant d'inserer.
+-- Peut etre appelee directement ou via PROC_OPEN_TICKET_PAU (02_setup_pau.sql).
+CREATE OR REPLACE PROCEDURE PROC_CREATE_TICKET (
+  p_site_id             IN NUMBER,
+  p_device_id           IN NUMBER,
+  p_opened_by_person_id IN NUMBER,
+  p_issue_label         IN VARCHAR2
+) AS
+  v_device_count NUMBER := 0;
+  v_ticket_id    NUMBER;
+BEGIN
+  -- Valider que le device existe sur le site declare
+  IF p_site_id = 1 THEN
+    SELECT COUNT(*) INTO v_device_count
+    FROM DEVICE WHERE device_id = p_device_id AND site_id = 1;
+  ELSIF p_site_id = 2 THEN
+    SELECT COUNT(*) INTO v_device_count
+    FROM DEVICE@LNK_PAU WHERE device_id = p_device_id AND site_id = 2;
+  ELSE
+    RAISE_APPLICATION_ERROR(-20032, 'site_id invalide : ' || p_site_id);
+  END IF;
+
+  IF v_device_count = 0 THEN
+    RAISE_APPLICATION_ERROR(-20033,
+      'Device ' || p_device_id || ' introuvable sur site ' || p_site_id);
+  END IF;
+
+  SELECT SEQ_TICKET_ID.NEXTVAL INTO v_ticket_id FROM DUAL;
+
+  INSERT INTO MAINTENANCE_TICKET (
+    ticket_id, site_id, device_id, opened_by_person_id,
+    issue_label, ticket_status, opened_at
+  ) VALUES (
+    v_ticket_id, p_site_id, p_device_id, p_opened_by_person_id,
+    p_issue_label, 'OPEN', SYSDATE
+  );
+
+  COMMIT;
+  DBMS_OUTPUT.PUT_LINE('Ticket ' || v_ticket_id || ' cree (site=' || p_site_id || ', device=' || p_device_id || ')');
+EXCEPTION WHEN OTHERS THEN
+  ROLLBACK;
+  RAISE_APPLICATION_ERROR(-20034, 'PROC_CREATE_TICKET : ' || SQLERRM);
+END;
+/
 
 COMMENT ON TABLE MAINTENANCE_TICKET IS 'Table supplementaire geree a Cergy pour les interventions sur les equipements.';

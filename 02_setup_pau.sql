@@ -196,7 +196,8 @@ CREATE INDEX IDX_DEVICE_ROOM ON DEVICE(room_id) TABLESPACE IDX_PAU;
 CREATE INDEX IDX_DEVICE_PERSON ON DEVICE(assigned_person_id) TABLESPACE IDX_PAU;
 CREATE INDEX IDX_DEVICE_TYPE ON DEVICE(device_type_id) TABLESPACE IDX_PAU;
 CREATE INDEX IDX_PERIPHERAL_DEVICE ON PERIPHERAL(assigned_device_id) TABLESPACE IDX_PAU;
-CREATE INDEX IDX_ASSIGN_DEVICE ON DEVICE_ASSIGNMENT(device_id) TABLESPACE IDX_PAU;
+CREATE INDEX IDX_ASSIGN_DEVICE  ON DEVICE_ASSIGNMENT(device_id)  TABLESPACE IDX_PAU;
+CREATE INDEX IDX_ASSIGN_PERSON  ON DEVICE_ASSIGNMENT(person_id)  TABLESPACE IDX_PAU;
 
 -- ============================================================
 -- 7. DONNEES DE REFERENCE (MEMES IDS SUR CERGY ET PAU)
@@ -266,7 +267,51 @@ COMMIT;
 -- Remplacer l'adresse / service si necessaire dans votre installation Oracle.
 CREATE DATABASE LINK LNK_CERGY
 CONNECT TO CYTECH_CERGY IDENTIFIED BY cergy2026
-USING '//localhost:1521/FREEPDB1';
+USING '//localhost:1521/XEPDB1';
+
+-- ============================================================
+-- 10. PROCEDURE TICKET (ouverture depuis Pau vers Cergy)
+-- ============================================================
+-- Pau n'a pas de MAINTENANCE_TICKET local.
+-- Cette procedure permet a un utilisateur Pau d'ouvrir un ticket
+-- pour un de ses devices : elle insere directement dans Cergy via LNK_CERGY.
+-- opened_by_person_id doit etre un Cergy person (technicien IT centralise).
+CREATE OR REPLACE PROCEDURE PROC_OPEN_TICKET_PAU (
+  p_device_id           IN NUMBER,
+  p_opened_by_person_id IN NUMBER,
+  p_issue_label         IN VARCHAR2
+) AS
+  v_device_count NUMBER;
+  v_ticket_id    NUMBER;
+BEGIN
+  -- Verifier que le device appartient bien a Pau
+  SELECT COUNT(*) INTO v_device_count
+  FROM DEVICE
+  WHERE device_id = p_device_id AND site_id = 2;
+
+  IF v_device_count = 0 THEN
+    RAISE_APPLICATION_ERROR(-20030, 'Device introuvable sur Pau : ' || p_device_id);
+  END IF;
+
+  -- Recuperer un nouvel ID depuis la sequence Cergy
+  SELECT SEQ_TICKET_ID.NEXTVAL@LNK_CERGY INTO v_ticket_id FROM DUAL;
+
+  -- Inserer le ticket sur Cergy (site_id=2 : device Pau)
+  INSERT INTO MAINTENANCE_TICKET@LNK_CERGY (
+    ticket_id, site_id, device_id, opened_by_person_id,
+    issue_label, ticket_status, opened_at
+  ) VALUES (
+    v_ticket_id, 2, p_device_id, p_opened_by_person_id,
+    p_issue_label, 'OPEN', SYSDATE
+  );
+
+  COMMIT;
+  DBMS_OUTPUT.PUT_LINE('Ticket ' || v_ticket_id || ' ouvert sur Cergy pour device Pau ' || p_device_id);
+EXCEPTION WHEN OTHERS THEN
+  ROLLBACK;
+  RAISE_APPLICATION_ERROR(-20031, 'PROC_OPEN_TICKET_PAU : ' || SQLERRM);
+END;
+/
 
 -- Vue simple pour verifier l'acces distant
 CREATE OR REPLACE VIEW V_CERGY_TICKET_MIN AS

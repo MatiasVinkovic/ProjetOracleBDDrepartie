@@ -81,18 +81,8 @@ CREATE TABLE DEVICE_TYPE (
   type_label       VARCHAR2(80)  NOT NULL
 ) TABLESPACE DATA_PAU;
 
-CREATE TABLE OS_FAMILY (
-  os_family_id   NUMBER        CONSTRAINT PK_OS_FAMILY PRIMARY KEY,
-  family_name    VARCHAR2(40)  CONSTRAINT UK_OS_FAMILY_NAME UNIQUE NOT NULL
-) TABLESPACE DATA_PAU;
-
-CREATE TABLE OS_VERSION (
-  os_version_id   NUMBER        CONSTRAINT PK_OS_VERSION PRIMARY KEY,
-  os_family_id    NUMBER        NOT NULL,
-  version_label   VARCHAR2(60)  NOT NULL,
-  CONSTRAINT FK_OS_VERSION_FAMILY FOREIGN KEY (os_family_id) REFERENCES OS_FAMILY(os_family_id),
-  CONSTRAINT UK_OS_VERSION UNIQUE (os_family_id, version_label)
-) TABLESPACE DATA_PAU;
+-- OS_FAMILY et OS_VERSION : propriete de Cergy uniquement.
+-- Pau accede via MV_OS_FAMILY et MV_OS_VERSION (cf. section 9).
 
 CREATE TABLE PERIPHERAL_TYPE (
   peripheral_type_id   NUMBER        CONSTRAINT PK_PERIPHERAL_TYPE PRIMARY KEY,
@@ -155,7 +145,7 @@ CREATE TABLE DEVICE (
   CONSTRAINT FK_DEVICE_ROOM FOREIGN KEY (room_id) REFERENCES ROOM(room_id),
   CONSTRAINT FK_DEVICE_PERSON FOREIGN KEY (assigned_person_id) REFERENCES PERSON(person_id),
   CONSTRAINT FK_DEVICE_TYPE FOREIGN KEY (device_type_id) REFERENCES DEVICE_TYPE(device_type_id),
-  CONSTRAINT FK_DEVICE_OS FOREIGN KEY (os_version_id) REFERENCES OS_VERSION(os_version_id),
+  -- FK_DEVICE_OS supprimee : OS_VERSION n'est pas une table locale (MV_OS_VERSION)
   CONSTRAINT CK_DEVICE_SITE CHECK (site_id = 2),
   CONSTRAINT CK_DEVICE_STATUS CHECK (device_status IN ('IN_SERVICE','IN_STOCK','IN_REPAIR','RETIRED'))
 ) TABLESPACE DATA_PAU;
@@ -214,15 +204,8 @@ INSERT INTO DEVICE_TYPE VALUES (1, 'DESKTOP', 'Ordinateur fixe');
 INSERT INTO DEVICE_TYPE VALUES (2, 'LAPTOP',  'Ordinateur portable');
 INSERT INTO DEVICE_TYPE VALUES (3, 'TABLET',  'Tablette');
 
-INSERT INTO OS_FAMILY VALUES (1, 'Windows');
-INSERT INTO OS_FAMILY VALUES (2, 'Linux');
-INSERT INTO OS_FAMILY VALUES (3, 'iPadOS');
-INSERT INTO OS_FAMILY VALUES (4, 'Android');
-
-INSERT INTO OS_VERSION VALUES (1, 1, 'Windows 11');
-INSERT INTO OS_VERSION VALUES (2, 2, 'Ubuntu 24.04');
-INSERT INTO OS_VERSION VALUES (3, 3, 'iPadOS 18');
-INSERT INTO OS_VERSION VALUES (4, 4, 'Android 15');
+-- OS_FAMILY et OS_VERSION : pas d'INSERT local, donnees geries par Cergy.
+-- Les MVs sont creees en section 9 apres le DB link.
 
 INSERT INTO PERIPHERAL_TYPE VALUES (1, 'SCREEN',  'Ecran');
 INSERT INTO PERIPHERAL_TYPE VALUES (2, 'MOUSE',   'Souris');
@@ -313,7 +296,28 @@ EXCEPTION WHEN OTHERS THEN
 END;
 /
 
--- Vue simple pour verifier l'acces distant
+-- ============================================================
+-- 11. VUES MATERIALISEES OS (propriete de Cergy, cache local Pau)
+-- ============================================================
+-- Pau ne possede pas OS_FAMILY ni OS_VERSION en table locale.
+-- Ces MVs sont des copies en lecture seule, refreshees a la demande
+-- quand Cergy enregistre un nouvel OS (evenement rare, 2-3x/an).
+--
+-- Refresh : EXEC DBMS_MVIEW.REFRESH('MV_OS_FAMILY');
+--           EXEC DBMS_MVIEW.REFRESH('MV_OS_VERSION');
+-- (connecte en CYTECH_PAU, apres que Cergy ait fait ses INSERTs)
+
+CREATE MATERIALIZED VIEW MV_OS_FAMILY
+  BUILD IMMEDIATE
+  REFRESH ON DEMAND
+AS SELECT os_family_id, family_name FROM OS_FAMILY@LNK_CERGY;
+
+CREATE MATERIALIZED VIEW MV_OS_VERSION
+  BUILD IMMEDIATE
+  REFRESH ON DEMAND
+AS SELECT os_version_id, os_family_id, version_label FROM OS_VERSION@LNK_CERGY;
+
+-- Vue acces tickets Cergy (inchangee)
 CREATE OR REPLACE VIEW V_CERGY_TICKET_MIN AS
-SELECT ticket_id, device_id, issue_label, ticket_status
+SELECT ticket_id, site_id, device_id, issue_label, ticket_status, opened_at
 FROM MAINTENANCE_TICKET@LNK_CERGY;

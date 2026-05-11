@@ -419,6 +419,7 @@ END;
 | `05_generate_data.sql` | `CYTECH_CERGY` (CONNECT interne) | `PROC_GENERATE_DATA` — 50 personnes, 100 devices, 100 périphériques, 20 tickets par site |
 | `06_performance_queries.sql` | `CYTECH_CERGY` | 5 requêtes avec `EXPLAIN PLAN` : index vs full scan, jointures, requêtes distribuées |
 | `07_audit_trigger.sql` | `CYTECH_CERGY` (CONNECT interne) | Table `DEVICE_AUDIT` + séquence + trigger `TRG_AUDIT_DEVICE` sur les 2 sites |
+| `08_recommended.sql` | `CYTECH_CERGY` puis `SYSDBA` puis `CYTECH_ADMIN` | Vues globales, `PROC_TRANSFER_DEVICE`, `FCT_COUNT_DEVICES_BY_SITE`, `PROC_RAPPORT_IN_REPAIR`, synonymes admin |
 
 ---
 
@@ -437,8 +438,7 @@ END;
 - [x] Rôles hiérarchiques (`CYTECH_READER` ⊆ `CYTECH_ADMIN_ROLE`)
 - [x] Données de test insérées sur les 2 sites
 - [x] Vérification complète de l'installation (0 objet invalide, 0 pollution SYS)
-- [x] `PKG_REPLICATION` déployé sur les 2 sites (avec `set_replicating` pour anti-boucle cross-session)
-- [x] 12 triggers de réplication (6 tables × 2 sites) — `04_replication.sql`
+- [x] 6 MVs `REFRESH ON DEMAND` en remplacement des triggers de réplication — `03_replication.sql`
 - [x] Génération de données aléatoires via `PROC_GENERATE_DATA` (`DBMS_RANDOM`) — `05_generate_data.sql`
   - Cergy : 50 personnes, 100 devices, 100 périphériques, 20 tickets
   - Pau   : 50 personnes, 100 devices, 100 périphériques
@@ -449,7 +449,7 @@ END;
 
 ### Obligatoire (critères d'évaluation)
 
-- [x] **Triggers de réplication PL/SQL** : `PKG_REPLICATION` + 6 paires de triggers — voir `04_replication.sql`
+- [x] **Réplication inter-sites** : MVs `REFRESH ON DEMAND` (MV_SITE, MV_PERSON_ROLE côté Cergy ; MV_DEVICE_TYPE, MV_PERIPHERAL_TYPE, MV_OS_FAMILY, MV_OS_VERSION côté Pau) — voir `03_replication.sql` *(choix architectural : triggers bidirectionnels remplacés par MVs pour éviter deadlocks sur données changeant 2-3 fois/an)*
 - [x] **Génération d'un jeu de test conséquent** : `PROC_GENERATE_DATA` avec `DBMS_RANDOM` — voir `05_generate_data.sql`
 - [x] **Requêtes complexes de test de performance** + **plans d'exécution** — voir `06_performance_queries.sql`
   - Q1 : tickets ouverts — comparaison index (`IDX_TICKET_STATUS`) vs full scan forcé
@@ -461,11 +461,11 @@ END;
 
 ### Fortement recommandé
 
-- [ ] **Vues globales consolidées** (`V_GLOBAL_DEVICE`, `V_GLOBAL_PERSON`) accessibles depuis `CYTECH_ADMIN`
-- [ ] **Procédures PL/SQL** : ex. `PROC_TRANSFER_DEVICE(device_id, new_site_id)` pour déplacer un équipement d'un site à l'autre
-- [ ] **Fonction PL/SQL** : ex. `FCT_COUNT_DEVICES_BY_SITE(site_id)` retournant le nombre d'équipements actifs
-- [ ] **Curseur** : ex. rapport PL/SQL listant tous les équipements en réparation sur les 2 sites
-- [ ] **Synonymes** sur `CYTECH_ADMIN` pour accéder à `CYTECH_CERGY.DEVICE` simplement via `DEVICE_CERGY`
+- [x] **Vues globales consolidées** `V_GLOBAL_DEVICE`, `V_GLOBAL_PERSON` sur `CYTECH_CERGY` (UNION ALL Cergy + Pau via DB link), accessibles depuis `CYTECH_ADMIN` via synonymes — voir `08_recommended.sql`
+- [x] **Procédure PL/SQL** `PROC_TRANSFER_DEVICE(p_device_id, p_source_site, p_target_room_id)` — copie le device sur le site cible et retire l'original — voir `08_recommended.sql`
+- [x] **Fonction PL/SQL** `FCT_COUNT_DEVICES_BY_SITE(p_site_id)` — retourne le nombre d'équipements `IN_SERVICE` sur le site demandé — voir `08_recommended.sql`
+- [x] **Curseur** `PROC_RAPPORT_IN_REPAIR` — rapport PL/SQL avec deux curseurs listant tous les équipements `IN_REPAIR` sur les 2 sites — voir `08_recommended.sql`
+- [x] **Synonymes** sur `CYTECH_ADMIN` : `DEVICE_CERGY`, `DEVICE_PAU`, `PERSON_CERGY`, `PERSON_PAU`, `TICKET`, `V_GLOBAL_DEVICE`, `V_GLOBAL_PERSON` — voir `08_recommended.sql`
 
 ### Optionnel (bonus)
 

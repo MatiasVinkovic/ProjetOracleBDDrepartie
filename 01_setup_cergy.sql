@@ -76,6 +76,20 @@ CREATE TABLE PERIPHERAL_TYPE (
   type_label           VARCHAR2(80)  NOT NULL
 ) TABLESPACE DATA_CERGY;
 
+-- A. LES SÉQUENCES (Ajoutées pour être comme Pau)
+CREATE SEQUENCE SEQ_PERSON_CERGY  START WITH 100 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_DEVICE_CERGY  START WITH 100 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_PERIPH_CERGY  START WITH 100 INCREMENT BY 1 NOCACHE;
+-- (Garde la SEQ_TICKET_ID qui est dans ta section 6)
+
+-- Création du Cluster pour Cergy
+CREATE CLUSTER cl_device_periph (id_appareil NUMBER) 
+SIZE 512 
+TABLESPACE DATA_CERGY;
+
+-- L'index de cluster est OBLIGATOIRE avant toute insertion
+CREATE INDEX idx_cl_device_periph ON CLUSTER cl_device_periph TABLESPACE IDX_CERGY;
+
 -- ============================================================
 -- 5. TABLES LOCALES CERGY
 -- ============================================================
@@ -84,7 +98,6 @@ CREATE TABLE BUILDING (
   site_id          NUMBER        NOT NULL,
   building_code    VARCHAR2(10)  NOT NULL,
   building_name    VARCHAR2(80)  NOT NULL,
-  -- FK_BUILDING_SITE supprimee : SITE est une MV (propriete Pau)
   CONSTRAINT UK_BUILDING UNIQUE (site_id, building_code),
   CONSTRAINT CK_BUILDING_SITE CHECK (site_id = 1)
 ) TABLESPACE DATA_CERGY;
@@ -109,13 +122,12 @@ CREATE TABLE PERSON (
   first_name       VARCHAR2(80)   NOT NULL,
   email            VARCHAR2(120)  CONSTRAINT UK_PERSON_EMAIL UNIQUE NOT NULL,
   person_status    VARCHAR2(20)   DEFAULT 'ACTIVE' NOT NULL,
-  -- FK_PERSON_SITE et FK_PERSON_ROLE supprimees : SITE et PERSON_ROLE sont des MVs
   CONSTRAINT CK_PERSON_SITE CHECK (site_id = 1),
   CONSTRAINT CK_PERSON_STATUS CHECK (person_status IN ('ACTIVE','INACTIVE'))
 ) TABLESPACE DATA_CERGY;
 
 CREATE TABLE DEVICE (
-  device_id             NUMBER         CONSTRAINT PK_DEVICE PRIMARY KEY,
+  device_id             NUMBER,
   site_id               NUMBER         NOT NULL,
   room_id               NUMBER         NOT NULL,
   assigned_person_id    NUMBER,
@@ -126,17 +138,17 @@ CREATE TABLE DEVICE (
   serial_number         VARCHAR2(80)   CONSTRAINT UK_DEVICE_SERIAL UNIQUE,
   purchase_date         DATE,
   device_status         VARCHAR2(20)   DEFAULT 'IN_SERVICE' NOT NULL,
-  -- FK_DEVICE_SITE supprimee : SITE est une MV
   CONSTRAINT FK_DEVICE_ROOM   FOREIGN KEY (room_id)            REFERENCES ROOM(room_id),
   CONSTRAINT FK_DEVICE_PERSON FOREIGN KEY (assigned_person_id) REFERENCES PERSON(person_id),
   CONSTRAINT FK_DEVICE_TYPE   FOREIGN KEY (device_type_id)     REFERENCES DEVICE_TYPE(device_type_id),
   CONSTRAINT FK_DEVICE_OS     FOREIGN KEY (os_version_id)      REFERENCES OS_VERSION(os_version_id),
   CONSTRAINT CK_DEVICE_SITE CHECK (site_id = 1),
   CONSTRAINT CK_DEVICE_STATUS CHECK (device_status IN ('IN_SERVICE','IN_STOCK','IN_REPAIR','RETIRED'))
-) TABLESPACE DATA_CERGY;
+) 
+CLUSTER cl_device_periph(device_id);
 
 CREATE TABLE PERIPHERAL (
-  peripheral_id         NUMBER         CONSTRAINT PK_PERIPHERAL PRIMARY KEY,
+  peripheral_id         NUMBER,
   site_id               NUMBER         NOT NULL,
   room_id               NUMBER         NOT NULL,
   assigned_device_id    NUMBER,
@@ -144,13 +156,13 @@ CREATE TABLE PERIPHERAL (
   peripheral_name       VARCHAR2(80)   NOT NULL,
   serial_number         VARCHAR2(80),
   peripheral_status     VARCHAR2(20)   DEFAULT 'AVAILABLE' NOT NULL,
-  -- FK_PERIPHERAL_SITE supprimee : SITE est une MV
   CONSTRAINT FK_PERIPHERAL_ROOM   FOREIGN KEY (room_id)           REFERENCES ROOM(room_id),
   CONSTRAINT FK_PERIPHERAL_DEVICE FOREIGN KEY (assigned_device_id) REFERENCES DEVICE(device_id),
   CONSTRAINT FK_PERIPHERAL_TYPE   FOREIGN KEY (peripheral_type_id) REFERENCES PERIPHERAL_TYPE(peripheral_type_id),
   CONSTRAINT CK_PERIPHERAL_SITE CHECK (site_id = 1),
   CONSTRAINT CK_PERIPHERAL_STATUS CHECK (peripheral_status IN ('AVAILABLE','ASSIGNED','BROKEN'))
-) TABLESPACE DATA_CERGY;
+)
+CLUSTER cl_device_periph(assigned_device_id);
 
 CREATE TABLE DEVICE_ASSIGNMENT (
   assignment_id        NUMBER        CONSTRAINT PK_DEVICE_ASSIGNMENT PRIMARY KEY,

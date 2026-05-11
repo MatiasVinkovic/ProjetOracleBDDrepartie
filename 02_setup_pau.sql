@@ -67,6 +67,19 @@ CREATE TABLE PERSON_ROLE (
   role_label   VARCHAR2(80)  NOT NULL
 ) TABLESPACE DATA_PAU;
 
+-- 1. Séquences pour l'auto-incrémentation (Départ à 2000 pour Pau)
+CREATE SEQUENCE SEQ_PERSON_PAU  START WITH 2000 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_DEVICE_PAU  START WITH 2000 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE SEQ_PERIPH_PAU  START WITH 2000 INCREMENT BY 1 NOCACHE;
+
+-- Création du Cluster pour Pau
+CREATE CLUSTER cl_device_periph_pau (id_appareil NUMBER) 
+SIZE 512 
+TABLESPACE DATA_PAU;
+
+-- 3. Index de cluster local
+CREATE INDEX idx_cl_device_periph_pau ON CLUSTER cl_device_periph_pau TABLESPACE IDX_PAU;
+
 -- ============================================================
 -- 5. TABLES LOCALES PAU
 -- ============================================================
@@ -107,7 +120,7 @@ CREATE TABLE PERSON (
 ) TABLESPACE DATA_PAU;
 
 CREATE TABLE DEVICE (
-  device_id             NUMBER         CONSTRAINT PK_DEVICE PRIMARY KEY,
+  device_id             NUMBER,
   site_id               NUMBER         NOT NULL,
   room_id               NUMBER         NOT NULL,
   assigned_person_id    NUMBER,
@@ -121,14 +134,13 @@ CREATE TABLE DEVICE (
   CONSTRAINT FK_DEVICE_SITE   FOREIGN KEY (site_id)            REFERENCES SITE(site_id),
   CONSTRAINT FK_DEVICE_ROOM   FOREIGN KEY (room_id)            REFERENCES ROOM(room_id),
   CONSTRAINT FK_DEVICE_PERSON FOREIGN KEY (assigned_person_id) REFERENCES PERSON(person_id),
-  -- FK_DEVICE_TYPE supprimee : DEVICE_TYPE est une MV (propriete Cergy)
-  -- FK_DEVICE_OS supprimee   : OS_VERSION est une MV (propriete Cergy)
   CONSTRAINT CK_DEVICE_SITE CHECK (site_id = 2),
   CONSTRAINT CK_DEVICE_STATUS CHECK (device_status IN ('IN_SERVICE','IN_STOCK','IN_REPAIR','RETIRED'))
-) TABLESPACE DATA_PAU;
+)
+CLUSTER cl_device_periph_pau(device_id);
 
 CREATE TABLE PERIPHERAL (
-  peripheral_id         NUMBER         CONSTRAINT PK_PERIPHERAL PRIMARY KEY,
+  peripheral_id         NUMBER,
   site_id               NUMBER         NOT NULL,
   room_id               NUMBER         NOT NULL,
   assigned_device_id    NUMBER,
@@ -139,10 +151,10 @@ CREATE TABLE PERIPHERAL (
   CONSTRAINT FK_PERIPHERAL_SITE   FOREIGN KEY (site_id)           REFERENCES SITE(site_id),
   CONSTRAINT FK_PERIPHERAL_ROOM   FOREIGN KEY (room_id)           REFERENCES ROOM(room_id),
   CONSTRAINT FK_PERIPHERAL_DEVICE FOREIGN KEY (assigned_device_id) REFERENCES DEVICE(device_id),
-  -- FK_PERIPHERAL_TYPE supprimee : PERIPHERAL_TYPE est une MV (propriete Cergy)
   CONSTRAINT CK_PERIPHERAL_SITE CHECK (site_id = 2),
   CONSTRAINT CK_PERIPHERAL_STATUS CHECK (peripheral_status IN ('AVAILABLE','ASSIGNED','BROKEN'))
-) TABLESPACE DATA_PAU;
+)
+CLUSTER cl_device_periph_pau(assigned_device_id);
 
 CREATE TABLE DEVICE_ASSIGNMENT (
   assignment_id        NUMBER        CONSTRAINT PK_DEVICE_ASSIGNMENT PRIMARY KEY,

@@ -50,7 +50,7 @@
 -- 4. TABLES DE REFERENCE — PROPRIETE PAU
 -- ============================================================
 -- DEVICE_TYPE, PERIPHERAL_TYPE, OS_FAMILY, OS_VERSION appartiennent a Cergy.
--- Pau y accede via MVs (section 11).
+-- Pau y accede via MVs (cf. 04_replication.sql).
 
 CREATE TABLE SITE (
   site_id      NUMBER        CONSTRAINT PK_SITE PRIMARY KEY,
@@ -178,7 +178,7 @@ INSERT INTO PERSON_ROLE VALUES (3, 'ADMIN',   'Administrateur de site');
 INSERT INTO PERSON_ROLE VALUES (4, 'STUDENT', 'Etudiant');
 
 -- DEVICE_TYPE, PERIPHERAL_TYPE, OS_FAMILY, OS_VERSION :
--- pas d'INSERT local, donnees geries par Cergy (MVs en section 11).
+-- pas d'INSERT local, donnees geries par Cergy (MVs dans 04_replication.sql).
 
 -- ============================================================
 -- 8. DONNEES LOCALES PAU
@@ -221,67 +221,8 @@ CONNECT TO CYTECH_CERGY IDENTIFIED BY cergy2026
 USING '//localhost:1521/XEPDB1';
 
 -- ============================================================
--- 10. PROCEDURE TICKET (ouverture depuis Pau vers Cergy)
+-- Objets cross-site (MV_DEVICE_TYPE, MV_PERIPHERAL_TYPE,
+-- MV_OS_FAMILY, MV_OS_VERSION, V_CERGY_TICKET_MIN,
+-- PROC_OPEN_TICKET_PAU) : crees dans 04_replication.sql, une fois
+-- que les deux schemas existent (Cergy ET Pau).
 -- ============================================================
-CREATE OR REPLACE PROCEDURE PROC_OPEN_TICKET_PAU (
-  p_device_id           IN NUMBER,
-  p_opened_by_person_id IN NUMBER,
-  p_issue_label         IN VARCHAR2
-) AS
-  v_device_count NUMBER;
-  v_ticket_id    NUMBER;
-BEGIN
-  SELECT COUNT(*) INTO v_device_count
-  FROM DEVICE WHERE device_id = p_device_id AND site_id = 2;
-
-  IF v_device_count = 0 THEN
-    RAISE_APPLICATION_ERROR(-20030, 'Device introuvable sur Pau : ' || p_device_id);
-  END IF;
-
-  SELECT SEQ_TICKET_ID.NEXTVAL@LNK_CERGY INTO v_ticket_id FROM DUAL;
-
-  INSERT INTO MAINTENANCE_TICKET@LNK_CERGY (
-    ticket_id, site_id, device_id, opened_by_person_id,
-    issue_label, ticket_status, opened_at
-  ) VALUES (
-    v_ticket_id, 2, p_device_id, p_opened_by_person_id,
-    p_issue_label, 'OPEN', SYSDATE
-  );
-
-  COMMIT;
-  DBMS_OUTPUT.PUT_LINE('Ticket ' || v_ticket_id || ' ouvert pour device Pau ' || p_device_id);
-EXCEPTION WHEN OTHERS THEN
-  ROLLBACK;
-  RAISE_APPLICATION_ERROR(-20031, 'PROC_OPEN_TICKET_PAU : ' || SQLERRM);
-END;
-/
-
--- ============================================================
--- 11. VUES MATERIALISEES — PROPRIETE CERGY (Pau recoit)
--- ============================================================
--- Refresh apres chaque ajout cote Cergy :
---   EXEC DBMS_MVIEW.REFRESH('MV_DEVICE_TYPE');
---   EXEC DBMS_MVIEW.REFRESH('MV_PERIPHERAL_TYPE');
---   EXEC DBMS_MVIEW.REFRESH('MV_OS_FAMILY');
---   EXEC DBMS_MVIEW.REFRESH('MV_OS_VERSION');
-
-CREATE MATERIALIZED VIEW MV_DEVICE_TYPE
-  BUILD IMMEDIATE REFRESH ON DEMAND
-AS SELECT device_type_id, type_code, type_label FROM DEVICE_TYPE@LNK_CERGY;
-
-CREATE MATERIALIZED VIEW MV_PERIPHERAL_TYPE
-  BUILD IMMEDIATE REFRESH ON DEMAND
-AS SELECT peripheral_type_id, type_code, type_label FROM PERIPHERAL_TYPE@LNK_CERGY;
-
-CREATE MATERIALIZED VIEW MV_OS_FAMILY
-  BUILD IMMEDIATE REFRESH ON DEMAND
-AS SELECT os_family_id, family_name FROM OS_FAMILY@LNK_CERGY;
-
-CREATE MATERIALIZED VIEW MV_OS_VERSION
-  BUILD IMMEDIATE REFRESH ON DEMAND
-AS SELECT os_version_id, os_family_id, version_label FROM OS_VERSION@LNK_CERGY;
-
--- Vue acces tickets Cergy
-CREATE OR REPLACE VIEW V_CERGY_TICKET_MIN AS
-SELECT ticket_id, site_id, device_id, issue_label, ticket_status, opened_at
-FROM MAINTENANCE_TICKET@LNK_CERGY;

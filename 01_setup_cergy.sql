@@ -49,7 +49,7 @@
 -- 4. TABLES DE REFERENCE — PROPRIETE CERGY
 -- ============================================================
 -- SITE et PERSON_ROLE appartiennent a Pau.
--- Cergy y accede via MV_SITE et MV_PERSON_ROLE (section 10).
+-- Cergy y accede via MV_SITE et MV_PERSON_ROLE (cf. 04_replication.sql).
 
 CREATE TABLE DEVICE_TYPE (
   device_type_id   NUMBER        CONSTRAINT PK_DEVICE_TYPE PRIMARY KEY,
@@ -203,7 +203,7 @@ CREATE SEQUENCE SEQ_TICKET_ID START WITH 100 INCREMENT BY 1 NOCACHE;
 -- 7. DONNEES DE REFERENCE — PROPRIETE CERGY
 -- ============================================================
 -- SITE et PERSON_ROLE : pas d'INSERT ici, gerees par Pau.
--- Cergy les lira via MV_SITE et MV_PERSON_ROLE (section 10).
+-- Cergy les lira via MV_SITE et MV_PERSON_ROLE (cf. 04_replication.sql).
 
 INSERT INTO DEVICE_TYPE VALUES (1, 'DESKTOP', 'Ordinateur fixe');
 INSERT INTO DEVICE_TYPE VALUES (2, 'LAPTOP',  'Ordinateur portable');
@@ -268,70 +268,7 @@ CONNECT TO CYTECH_PAU IDENTIFIED BY pau2026
 USING '//localhost:1521/XEPDB1';
 
 -- ============================================================
--- 10. VUES MATERIALISEES — PROPRIETE PAU (Cergy recoit)
+-- Objets cross-site (MV_SITE, MV_PERSON_ROLE, V_PAU_DEVICE_MIN,
+-- PROC_CREATE_TICKET) : crees dans 04_replication.sql, une fois
+-- que les deux schemas existent (Cergy ET Pau).
 -- ============================================================
--- SITE et PERSON_ROLE appartiennent a Pau.
--- Cergy n'en a besoin que pour des consultations (rapports globaux).
--- Refresh : EXEC DBMS_MVIEW.REFRESH('MV_SITE');
---           EXEC DBMS_MVIEW.REFRESH('MV_PERSON_ROLE');
-
-CREATE MATERIALIZED VIEW MV_SITE
-  BUILD IMMEDIATE
-  REFRESH ON DEMAND
-AS SELECT site_id, site_code, site_name, city, is_active FROM SITE@LNK_PAU;
-
-CREATE MATERIALIZED VIEW MV_PERSON_ROLE
-  BUILD IMMEDIATE
-  REFRESH ON DEMAND
-AS SELECT role_id, role_code, role_label FROM PERSON_ROLE@LNK_PAU;
-
--- Vue devices Pau (acces rapide depuis Cergy)
-CREATE OR REPLACE VIEW V_PAU_DEVICE_MIN AS
-SELECT device_id, asset_tag, device_name, device_status
-FROM DEVICE@LNK_PAU;
-
--- ============================================================
--- 11. PROCEDURE TICKET CROSS-SITE
--- ============================================================
--- Valide que le device existe sur le bon site avant d'inserer.
-CREATE OR REPLACE PROCEDURE PROC_CREATE_TICKET (
-  p_site_id             IN NUMBER,
-  p_device_id           IN NUMBER,
-  p_opened_by_person_id IN NUMBER,
-  p_issue_label         IN VARCHAR2
-) AS
-  v_device_count NUMBER := 0;
-  v_ticket_id    NUMBER;
-BEGIN
-  IF p_site_id = 1 THEN
-    SELECT COUNT(*) INTO v_device_count
-    FROM DEVICE WHERE device_id = p_device_id AND site_id = 1;
-  ELSIF p_site_id = 2 THEN
-    SELECT COUNT(*) INTO v_device_count
-    FROM DEVICE@LNK_PAU WHERE device_id = p_device_id AND site_id = 2;
-  ELSE
-    RAISE_APPLICATION_ERROR(-20032, 'site_id invalide : ' || p_site_id);
-  END IF;
-
-  IF v_device_count = 0 THEN
-    RAISE_APPLICATION_ERROR(-20033,
-      'Device ' || p_device_id || ' introuvable sur site ' || p_site_id);
-  END IF;
-
-  SELECT SEQ_TICKET_ID.NEXTVAL INTO v_ticket_id FROM DUAL;
-
-  INSERT INTO MAINTENANCE_TICKET (
-    ticket_id, site_id, device_id, opened_by_person_id,
-    issue_label, ticket_status, opened_at
-  ) VALUES (
-    v_ticket_id, p_site_id, p_device_id, p_opened_by_person_id,
-    p_issue_label, 'OPEN', SYSDATE
-  );
-
-  COMMIT;
-  DBMS_OUTPUT.PUT_LINE('Ticket ' || v_ticket_id || ' cree (site=' || p_site_id || ', device=' || p_device_id || ')');
-EXCEPTION WHEN OTHERS THEN
-  ROLLBACK;
-  RAISE_APPLICATION_ERROR(-20034, 'PROC_CREATE_TICKET : ' || SQLERRM);
-END;
-/

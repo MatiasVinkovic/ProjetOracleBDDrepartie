@@ -9,7 +9,7 @@
 -- ============================================================
 -- 1. AUDIT SUR CYTECH_CERGY
 -- ============================================================
-CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1
+CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/XEPDB1
 
 -- Table de trace
 CREATE TABLE DEVICE_AUDIT (
@@ -64,7 +64,7 @@ END;
 -- ============================================================
 -- 2. AUDIT SUR CYTECH_PAU
 -- ============================================================
-CONNECT CYTECH_PAU/pau2026@//localhost:1521/FREEPDB1
+CONNECT CYTECH_PAU/pau2026@//localhost:1521/XEPDB1
 
 CREATE TABLE DEVICE_AUDIT (
   audit_id          NUMBER          CONSTRAINT PK_DEVICE_AUDIT PRIMARY KEY,
@@ -111,7 +111,7 @@ END;
 -- ============================================================
 -- 3. VERIFICATION
 -- ============================================================
-CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1
+CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/XEPDB1
 
 -- Test : modifier un device et verifier la trace
 UPDATE DEVICE SET device_status = 'IN_REPAIR' WHERE device_id = 1;

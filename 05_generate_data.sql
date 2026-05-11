@@ -9,7 +9,7 @@
 -- ============================================================
 -- 1. GENERATION CERGY
 -- ============================================================
-CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1
+CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/XEPDB1
 
 SET SERVEROUTPUT ON
 
@@ -109,7 +109,7 @@ BEGIN
     INSERT INTO MAINTENANCE_TICKET (ticket_id, site_id, device_id, opened_by_person_id,
                                     technician_id, issue_label, ticket_status, opened_at, closed_at)
     VALUES (
-      100 + i, 1, v_dev_id, v_pers_id,
+      SEQ_TICKET_ID.NEXTVAL, 1, v_dev_id, v_pers_id,
       3, -- technicien existant (person_id=3)
       'Incident ' || DBMS_RANDOM.STRING('L', 20),
       v_tkt_status,
@@ -143,7 +143,7 @@ END;
 -- ============================================================
 -- 2. GENERATION PAU
 -- ============================================================
-CONNECT CYTECH_PAU/pau2026@//localhost:1521/FREEPDB1
+CONNECT CYTECH_PAU/pau2026@//localhost:1521/XEPDB1
 
 SET SERVEROUTPUT ON
 

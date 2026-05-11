@@ -4,7 +4,7 @@
 -- A executer connecte en CYTECH_CERGY
 -- ============================================================
 
-CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1
+CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/XEPDB1
 
 SET LINESIZE 200
 SET PAGESIZE 50
@@ -65,18 +65,19 @@ FETCH FIRST 10 ROWS ONLY;
 
 PROMPT === Q2 : Jointure multi-tables (Cergy) - avec index ===
 
+-- PERSON_ROLE n'est pas sur Cergy (propriete Pau) : on lit MV_PERSON_ROLE.
 EXPLAIN PLAN SET STATEMENT_ID = 'Q2_AVEC_INDEX' FOR
 SELECT p.last_name, p.first_name, pr.role_label,
        d.asset_tag, d.device_name, d.device_status,
        dt.type_label, ov.version_label,
        r.room_name, b.building_name
 FROM DEVICE d
-JOIN PERSON       p  ON d.assigned_person_id = p.person_id
-JOIN PERSON_ROLE  pr ON p.role_id            = pr.role_id
-JOIN DEVICE_TYPE  dt ON d.device_type_id     = dt.device_type_id
-JOIN OS_VERSION   ov ON d.os_version_id      = ov.os_version_id
-JOIN ROOM         r  ON d.room_id            = r.room_id
-JOIN BUILDING     b  ON r.building_id        = b.building_id
+JOIN PERSON         p  ON d.assigned_person_id = p.person_id
+JOIN MV_PERSON_ROLE pr ON p.role_id            = pr.role_id
+JOIN DEVICE_TYPE    dt ON d.device_type_id     = dt.device_type_id
+JOIN OS_VERSION     ov ON d.os_version_id      = ov.os_version_id
+JOIN ROOM           r  ON d.room_id            = r.room_id
+JOIN BUILDING       b  ON r.building_id        = b.building_id
 WHERE d.device_status = 'IN_SERVICE'
 ORDER BY b.building_name, r.room_name, d.asset_tag;
 
@@ -167,6 +168,8 @@ ORDER BY total DESC;
 
 PROMPT === Q5 : Devices IN_REPAIR sur les 2 sites ===
 
+-- DEVICE_TYPE est sur Cergy (proprietaire) : on l'utilise pour les 2 sites,
+-- les device_type_id etant coherents partout.
 EXPLAIN PLAN SET STATEMENT_ID = 'Q5_IN_REPAIR' FOR
 SELECT 'CERGY' AS site, d.asset_tag, d.device_name, dt.type_label
 FROM DEVICE d
@@ -175,7 +178,7 @@ WHERE d.device_status = 'IN_REPAIR'
 UNION ALL
 SELECT 'PAU', d.asset_tag, d.device_name, dt.type_label
 FROM DEVICE@LNK_PAU d
-JOIN DEVICE_TYPE@LNK_PAU dt ON d.device_type_id = dt.device_type_id
+JOIN DEVICE_TYPE dt ON d.device_type_id = dt.device_type_id
 WHERE d.device_status = 'IN_REPAIR'
 ORDER BY site, asset_tag;
 

@@ -3,17 +3,13 @@
 -- Projet SIE / BDDR - GLPI simplifie
 -- Site : PAU
 -- ============================================================
--- Objectif de ce script :
---   - creer le schema CYTECH_PAU
---   - creer les tables de reference repliquees sur les 2 sites
---   - creer les tables locales du site Pau
---   - ajouter quelques donnees de depart
---   - creer un DB LINK vers Cergy
---
--- Principe de repartition retenu :
---   * Tables de reference communes : repliquees sur Cergy et Pau
---   * Tables metier locales : meme structure sur les 2 sites
---   * Pau n'a pas la table de maintenance, reservee a Cergy
+-- Principe de repartition :
+--   Pau possede   : SITE, PERSON_ROLE
+--                   + toutes ses tables locales
+--   Pau recoit    : MV_DEVICE_TYPE, MV_PERIPHERAL_TYPE,
+--                   MV_OS_FAMILY, MV_OS_VERSION (propriete de Cergy)
+--   FKs vers DEVICE_TYPE et PERIPHERAL_TYPE supprimees (MV non referençables)
+--   Integrite garantie par CK constraints + procedures
 -- ============================================================
 
 -- ============================================================
@@ -28,29 +24,22 @@
 -- ============================================================
 -- CREATE TABLESPACE DATA_PAU
 -- DATAFILE 'data_pau.dbf' SIZE 50M AUTOEXTEND ON NEXT 10M MAXSIZE 500M
--- EXTENT MANAGEMENT LOCAL
--- SEGMENT SPACE MANAGEMENT AUTO;
+-- EXTENT MANAGEMENT LOCAL SEGMENT SPACE MANAGEMENT AUTO;
 
 -- CREATE TABLESPACE IDX_PAU
 -- DATAFILE 'idx_pau.dbf' SIZE 20M AUTOEXTEND ON NEXT 5M MAXSIZE 200M
--- EXTENT MANAGEMENT LOCAL
--- SEGMENT SPACE MANAGEMENT AUTO;
+-- EXTENT MANAGEMENT LOCAL SEGMENT SPACE MANAGEMENT AUTO;
 
 -- ============================================================
 -- 2. UTILISATEUR / SCHEMA (SYSDBA)
 -- ============================================================
 -- CREATE USER CYTECH_PAU IDENTIFIED BY pau2026
--- DEFAULT TABLESPACE DATA_PAU
--- TEMPORARY TABLESPACE TEMP
--- QUOTA UNLIMITED ON DATA_PAU
--- QUOTA UNLIMITED ON IDX_PAU;
+-- DEFAULT TABLESPACE DATA_PAU TEMPORARY TABLESPACE TEMP
+-- QUOTA UNLIMITED ON DATA_PAU QUOTA UNLIMITED ON IDX_PAU;
 
--- GRANT CREATE SESSION TO CYTECH_PAU;
--- GRANT CREATE TABLE TO CYTECH_PAU;
--- GRANT CREATE VIEW TO CYTECH_PAU;
--- GRANT CREATE SYNONYM TO CYTECH_PAU;
--- GRANT CREATE DATABASE LINK TO CYTECH_PAU;
--- GRANT CREATE SEQUENCE TO CYTECH_PAU;
+-- GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SYNONYM,
+--       CREATE DATABASE LINK, CREATE SEQUENCE, CREATE MATERIALIZED VIEW,
+--       CREATE PROCEDURE, CREATE TRIGGER TO CYTECH_PAU;
 
 -- ============================================================
 -- 3. CONNEXION
@@ -58,8 +47,11 @@
 -- CONNECT CYTECH_PAU/pau2026;
 
 -- ============================================================
--- 4. TABLES DE REFERENCE (REPLIQUEES SUR LES 2 SITES)
+-- 4. TABLES DE REFERENCE — PROPRIETE PAU
 -- ============================================================
+-- DEVICE_TYPE, PERIPHERAL_TYPE, OS_FAMILY, OS_VERSION appartiennent a Cergy.
+-- Pau y accede via MVs (section 11).
+
 CREATE TABLE SITE (
   site_id      NUMBER        CONSTRAINT PK_SITE PRIMARY KEY,
   site_code    VARCHAR2(10)  CONSTRAINT UK_SITE_CODE UNIQUE NOT NULL,
@@ -73,21 +65,6 @@ CREATE TABLE PERSON_ROLE (
   role_id      NUMBER        CONSTRAINT PK_PERSON_ROLE PRIMARY KEY,
   role_code    VARCHAR2(20)  CONSTRAINT UK_PERSON_ROLE_CODE UNIQUE NOT NULL,
   role_label   VARCHAR2(80)  NOT NULL
-) TABLESPACE DATA_PAU;
-
-CREATE TABLE DEVICE_TYPE (
-  device_type_id   NUMBER        CONSTRAINT PK_DEVICE_TYPE PRIMARY KEY,
-  type_code        VARCHAR2(20)  CONSTRAINT UK_DEVICE_TYPE_CODE UNIQUE NOT NULL,
-  type_label       VARCHAR2(80)  NOT NULL
-) TABLESPACE DATA_PAU;
-
--- OS_FAMILY et OS_VERSION : propriete de Cergy uniquement.
--- Pau accede via MV_OS_FAMILY et MV_OS_VERSION (cf. section 9).
-
-CREATE TABLE PERIPHERAL_TYPE (
-  peripheral_type_id   NUMBER        CONSTRAINT PK_PERIPHERAL_TYPE PRIMARY KEY,
-  type_code            VARCHAR2(20)  CONSTRAINT UK_PERIPHERAL_TYPE_CODE UNIQUE NOT NULL,
-  type_label           VARCHAR2(80)  NOT NULL
 ) TABLESPACE DATA_PAU;
 
 -- ============================================================
@@ -141,11 +118,11 @@ CREATE TABLE DEVICE (
   serial_number         VARCHAR2(80)   CONSTRAINT UK_DEVICE_SERIAL UNIQUE,
   purchase_date         DATE,
   device_status         VARCHAR2(20)   DEFAULT 'IN_SERVICE' NOT NULL,
-  CONSTRAINT FK_DEVICE_SITE FOREIGN KEY (site_id) REFERENCES SITE(site_id),
-  CONSTRAINT FK_DEVICE_ROOM FOREIGN KEY (room_id) REFERENCES ROOM(room_id),
+  CONSTRAINT FK_DEVICE_SITE   FOREIGN KEY (site_id)            REFERENCES SITE(site_id),
+  CONSTRAINT FK_DEVICE_ROOM   FOREIGN KEY (room_id)            REFERENCES ROOM(room_id),
   CONSTRAINT FK_DEVICE_PERSON FOREIGN KEY (assigned_person_id) REFERENCES PERSON(person_id),
-  CONSTRAINT FK_DEVICE_TYPE FOREIGN KEY (device_type_id) REFERENCES DEVICE_TYPE(device_type_id),
-  -- FK_DEVICE_OS supprimee : OS_VERSION n'est pas une table locale (MV_OS_VERSION)
+  -- FK_DEVICE_TYPE supprimee : DEVICE_TYPE est une MV (propriete Cergy)
+  -- FK_DEVICE_OS supprimee   : OS_VERSION est une MV (propriete Cergy)
   CONSTRAINT CK_DEVICE_SITE CHECK (site_id = 2),
   CONSTRAINT CK_DEVICE_STATUS CHECK (device_status IN ('IN_SERVICE','IN_STOCK','IN_REPAIR','RETIRED'))
 ) TABLESPACE DATA_PAU;
@@ -159,10 +136,10 @@ CREATE TABLE PERIPHERAL (
   peripheral_name       VARCHAR2(80)   NOT NULL,
   serial_number         VARCHAR2(80),
   peripheral_status     VARCHAR2(20)   DEFAULT 'AVAILABLE' NOT NULL,
-  CONSTRAINT FK_PERIPHERAL_SITE FOREIGN KEY (site_id) REFERENCES SITE(site_id),
-  CONSTRAINT FK_PERIPHERAL_ROOM FOREIGN KEY (room_id) REFERENCES ROOM(room_id),
+  CONSTRAINT FK_PERIPHERAL_SITE   FOREIGN KEY (site_id)           REFERENCES SITE(site_id),
+  CONSTRAINT FK_PERIPHERAL_ROOM   FOREIGN KEY (room_id)           REFERENCES ROOM(room_id),
   CONSTRAINT FK_PERIPHERAL_DEVICE FOREIGN KEY (assigned_device_id) REFERENCES DEVICE(device_id),
-  CONSTRAINT FK_PERIPHERAL_TYPE FOREIGN KEY (peripheral_type_id) REFERENCES PERIPHERAL_TYPE(peripheral_type_id),
+  -- FK_PERIPHERAL_TYPE supprimee : PERIPHERAL_TYPE est une MV (propriete Cergy)
   CONSTRAINT CK_PERIPHERAL_SITE CHECK (site_id = 2),
   CONSTRAINT CK_PERIPHERAL_STATUS CHECK (peripheral_status IN ('AVAILABLE','ASSIGNED','BROKEN'))
 ) TABLESPACE DATA_PAU;
@@ -181,37 +158,27 @@ CREATE TABLE DEVICE_ASSIGNMENT (
 -- ============================================================
 -- 6. INDEX
 -- ============================================================
-CREATE INDEX IDX_PERSON_ROLE ON PERSON(role_id) TABLESPACE IDX_PAU;
-CREATE INDEX IDX_DEVICE_ROOM ON DEVICE(room_id) TABLESPACE IDX_PAU;
-CREATE INDEX IDX_DEVICE_PERSON ON DEVICE(assigned_person_id) TABLESPACE IDX_PAU;
-CREATE INDEX IDX_DEVICE_TYPE ON DEVICE(device_type_id) TABLESPACE IDX_PAU;
-CREATE INDEX IDX_PERIPHERAL_DEVICE ON PERIPHERAL(assigned_device_id) TABLESPACE IDX_PAU;
-CREATE INDEX IDX_ASSIGN_DEVICE  ON DEVICE_ASSIGNMENT(device_id)  TABLESPACE IDX_PAU;
-CREATE INDEX IDX_ASSIGN_PERSON  ON DEVICE_ASSIGNMENT(person_id)  TABLESPACE IDX_PAU;
+CREATE INDEX IDX_PERSON_ROLE      ON PERSON(role_id)                   TABLESPACE IDX_PAU;
+CREATE INDEX IDX_DEVICE_ROOM      ON DEVICE(room_id)                   TABLESPACE IDX_PAU;
+CREATE INDEX IDX_DEVICE_PERSON    ON DEVICE(assigned_person_id)        TABLESPACE IDX_PAU;
+CREATE INDEX IDX_DEVICE_TYPE      ON DEVICE(device_type_id)            TABLESPACE IDX_PAU;
+CREATE INDEX IDX_PERIPHERAL_DEVICE ON PERIPHERAL(assigned_device_id)   TABLESPACE IDX_PAU;
+CREATE INDEX IDX_ASSIGN_DEVICE    ON DEVICE_ASSIGNMENT(device_id)      TABLESPACE IDX_PAU;
+CREATE INDEX IDX_ASSIGN_PERSON    ON DEVICE_ASSIGNMENT(person_id)      TABLESPACE IDX_PAU;
 
 -- ============================================================
--- 7. DONNEES DE REFERENCE (MEMES IDS SUR CERGY ET PAU)
+-- 7. DONNEES DE REFERENCE — PROPRIETE PAU
 -- ============================================================
 INSERT INTO SITE VALUES (1, 'CERGY', 'CY Tech Cergy', 'Cergy', 'Y');
 INSERT INTO SITE VALUES (2, 'PAU',   'CY Tech Pau',   'Pau',   'Y');
 
-INSERT INTO PERSON_ROLE VALUES (1, 'PROF', 'Professeur');
-INSERT INTO PERSON_ROLE VALUES (2, 'TECH', 'Technicien');
-INSERT INTO PERSON_ROLE VALUES (3, 'ADMIN', 'Administrateur de site');
+INSERT INTO PERSON_ROLE VALUES (1, 'PROF',    'Professeur');
+INSERT INTO PERSON_ROLE VALUES (2, 'TECH',    'Technicien');
+INSERT INTO PERSON_ROLE VALUES (3, 'ADMIN',   'Administrateur de site');
 INSERT INTO PERSON_ROLE VALUES (4, 'STUDENT', 'Etudiant');
 
-INSERT INTO DEVICE_TYPE VALUES (1, 'DESKTOP', 'Ordinateur fixe');
-INSERT INTO DEVICE_TYPE VALUES (2, 'LAPTOP',  'Ordinateur portable');
-INSERT INTO DEVICE_TYPE VALUES (3, 'TABLET',  'Tablette');
-
--- OS_FAMILY et OS_VERSION : pas d'INSERT local, donnees geries par Cergy.
--- Les MVs sont creees en section 9 apres le DB link.
-
-INSERT INTO PERIPHERAL_TYPE VALUES (1, 'SCREEN',  'Ecran');
-INSERT INTO PERIPHERAL_TYPE VALUES (2, 'MOUSE',   'Souris');
-INSERT INTO PERIPHERAL_TYPE VALUES (3, 'KEYBOARD','Clavier');
-INSERT INTO PERIPHERAL_TYPE VALUES (4, 'STYLUS',  'Stylet');
-INSERT INTO PERIPHERAL_TYPE VALUES (5, 'DOCK',    'Station d''accueil');
+-- DEVICE_TYPE, PERIPHERAL_TYPE, OS_FAMILY, OS_VERSION :
+-- pas d'INSERT local, donnees geries par Cergy (MVs en section 11).
 
 -- ============================================================
 -- 8. DONNEES LOCALES PAU
@@ -219,24 +186,26 @@ INSERT INTO PERIPHERAL_TYPE VALUES (5, 'DOCK',    'Station d''accueil');
 INSERT INTO BUILDING VALUES (1001, 2, 'P1', 'Batiment P1');
 INSERT INTO BUILDING VALUES (1002, 2, 'P2', 'Batiment P2');
 
-INSERT INTO ROOM VALUES (1001, 1001, 'P101', 'Salle TP Informatique', 'LAB', 24);
-INSERT INTO ROOM VALUES (1002, 1001, 'P201', 'Salle Tablettes', 'LAB', 18);
-INSERT INTO ROOM VALUES (1003, 1002, 'P010', 'Bureau Enseignants', 'OFFICE', 6);
+INSERT INTO ROOM VALUES (1001, 1001, 'P101', 'Salle TP Informatique', 'LAB',    24);
+INSERT INTO ROOM VALUES (1002, 1001, 'P201', 'Salle Tablettes',       'LAB',    18);
+INSERT INTO ROOM VALUES (1003, 1002, 'P010', 'Bureau Enseignants',    'OFFICE',  6);
 
-INSERT INTO PERSON VALUES (1001, 2, 3, 'admin.pau', 'Admin', 'Pau', 'admin.pau@cytech.fr', 'ACTIVE');
-INSERT INTO PERSON VALUES (1002, 2, 1, 'garcia.lucia', 'Garcia', 'Lucia', 'lucia.garcia@cytech.fr', 'ACTIVE');
-INSERT INTO PERSON VALUES (1003, 2, 2, 'lebrun.theo', 'Lebrun', 'Theo', 'theo.lebrun@cytech.fr', 'ACTIVE');
-INSERT INTO PERSON VALUES (1004, 2, 1, 'morel.nina', 'Morel', 'Nina', 'nina.morel@cytech.fr', 'ACTIVE');
+INSERT INTO PERSON VALUES (1001, 2, 3, 'admin.pau',    'Admin',  'Pau',   'admin.pau@cytech.fr',        'ACTIVE');
+INSERT INTO PERSON VALUES (1002, 2, 1, 'garcia.lucia', 'Garcia', 'Lucia', 'lucia.garcia@cytech.fr',     'ACTIVE');
+INSERT INTO PERSON VALUES (1003, 2, 2, 'lebrun.theo',  'Lebrun', 'Theo',  'theo.lebrun@cytech.fr',      'ACTIVE');
+INSERT INTO PERSON VALUES (1004, 2, 1, 'morel.nina',   'Morel',  'Nina',  'nina.morel@cytech.fr',       'ACTIVE');
 
-INSERT INTO DEVICE VALUES (1001, 2, 1001, 1002, 1, 1, 'PAU-PC-001', 'PC Salle P101-01', 'SN-PAU-PC-001', DATE '2024-09-01', 'IN_SERVICE');
-INSERT INTO DEVICE VALUES (1002, 2, 1001, NULL, 1, 2, 'PAU-PC-002', 'PC Salle P101-02', 'SN-PAU-PC-002', DATE '2024-09-01', 'IN_SERVICE');
-INSERT INTO DEVICE VALUES (1003, 2, 1002, 1004, 3, 3, 'PAU-TAB-001', 'Tablette Salle P201-01', 'SN-PAU-TAB-001', DATE '2025-02-03', 'IN_SERVICE');
+-- device_type_id et os_version_id : valeurs coherentes avec les MVs Cergy (1-3 et 1-4)
+INSERT INTO DEVICE VALUES (1001, 2, 1001, 1002, 1, 1, 'PAU-PC-001',  'PC Salle P101-01',        'SN-PAU-PC-001',  DATE '2024-09-01', 'IN_SERVICE');
+INSERT INTO DEVICE VALUES (1002, 2, 1001, NULL, 1, 2, 'PAU-PC-002',  'PC Salle P101-02',        'SN-PAU-PC-002',  DATE '2024-09-01', 'IN_SERVICE');
+INSERT INTO DEVICE VALUES (1003, 2, 1002, 1004, 3, 3, 'PAU-TAB-001', 'Tablette Salle P201-01',  'SN-PAU-TAB-001', DATE '2025-02-03', 'IN_SERVICE');
 INSERT INTO DEVICE VALUES (1004, 2, 1003, 1001, 2, 1, 'PAU-LAP-001', 'Portable Administration', 'SN-PAU-LAP-001', DATE '2023-11-20', 'IN_SERVICE');
 
-INSERT INTO PERIPHERAL VALUES (1001, 2, 1001, 1001, 1, 'Ecran 24 pouces P101-01', 'SN-PAU-SCR-001', 'ASSIGNED');
-INSERT INTO PERIPHERAL VALUES (1002, 2, 1001, 1002, 3, 'Clavier P101-02', 'SN-PAU-KEY-001', 'ASSIGNED');
-INSERT INTO PERIPHERAL VALUES (1003, 2, 1002, 1003, 4, 'Stylet tablette P201-01', 'SN-PAU-STY-001', 'ASSIGNED');
-INSERT INTO PERIPHERAL VALUES (1004, 2, 1003, 1004, 5, 'Dock administration Pau', 'SN-PAU-DOC-001', 'ASSIGNED');
+-- peripheral_type_id : valeurs coherentes avec MV_PERIPHERAL_TYPE Cergy (1-5)
+INSERT INTO PERIPHERAL VALUES (1001, 2, 1001, 1001, 1, 'Ecran 24 pouces P101-01',  'SN-PAU-SCR-001', 'ASSIGNED');
+INSERT INTO PERIPHERAL VALUES (1002, 2, 1001, 1002, 3, 'Clavier P101-02',           'SN-PAU-KEY-001', 'ASSIGNED');
+INSERT INTO PERIPHERAL VALUES (1003, 2, 1002, 1003, 4, 'Stylet tablette P201-01',   'SN-PAU-STY-001', 'ASSIGNED');
+INSERT INTO PERIPHERAL VALUES (1004, 2, 1003, 1004, 5, 'Dock administration Pau',   'SN-PAU-DOC-001', 'ASSIGNED');
 
 INSERT INTO DEVICE_ASSIGNMENT VALUES (1001, 1001, 1002, DATE '2024-09-07', NULL);
 INSERT INTO DEVICE_ASSIGNMENT VALUES (1002, 1003, 1004, DATE '2025-02-10', NULL);
@@ -247,7 +216,6 @@ COMMIT;
 -- ============================================================
 -- 9. DB LINK VERS CERGY
 -- ============================================================
--- Remplacer l'adresse / service si necessaire dans votre installation Oracle.
 CREATE DATABASE LINK LNK_CERGY
 CONNECT TO CYTECH_CERGY IDENTIFIED BY cergy2026
 USING '//localhost:1521/XEPDB1';
@@ -255,10 +223,6 @@ USING '//localhost:1521/XEPDB1';
 -- ============================================================
 -- 10. PROCEDURE TICKET (ouverture depuis Pau vers Cergy)
 -- ============================================================
--- Pau n'a pas de MAINTENANCE_TICKET local.
--- Cette procedure permet a un utilisateur Pau d'ouvrir un ticket
--- pour un de ses devices : elle insere directement dans Cergy via LNK_CERGY.
--- opened_by_person_id doit etre un Cergy person (technicien IT centralise).
 CREATE OR REPLACE PROCEDURE PROC_OPEN_TICKET_PAU (
   p_device_id           IN NUMBER,
   p_opened_by_person_id IN NUMBER,
@@ -267,19 +231,15 @@ CREATE OR REPLACE PROCEDURE PROC_OPEN_TICKET_PAU (
   v_device_count NUMBER;
   v_ticket_id    NUMBER;
 BEGIN
-  -- Verifier que le device appartient bien a Pau
   SELECT COUNT(*) INTO v_device_count
-  FROM DEVICE
-  WHERE device_id = p_device_id AND site_id = 2;
+  FROM DEVICE WHERE device_id = p_device_id AND site_id = 2;
 
   IF v_device_count = 0 THEN
     RAISE_APPLICATION_ERROR(-20030, 'Device introuvable sur Pau : ' || p_device_id);
   END IF;
 
-  -- Recuperer un nouvel ID depuis la sequence Cergy
   SELECT SEQ_TICKET_ID.NEXTVAL@LNK_CERGY INTO v_ticket_id FROM DUAL;
 
-  -- Inserer le ticket sur Cergy (site_id=2 : device Pau)
   INSERT INTO MAINTENANCE_TICKET@LNK_CERGY (
     ticket_id, site_id, device_id, opened_by_person_id,
     issue_label, ticket_status, opened_at
@@ -289,7 +249,7 @@ BEGIN
   );
 
   COMMIT;
-  DBMS_OUTPUT.PUT_LINE('Ticket ' || v_ticket_id || ' ouvert sur Cergy pour device Pau ' || p_device_id);
+  DBMS_OUTPUT.PUT_LINE('Ticket ' || v_ticket_id || ' ouvert pour device Pau ' || p_device_id);
 EXCEPTION WHEN OTHERS THEN
   ROLLBACK;
   RAISE_APPLICATION_ERROR(-20031, 'PROC_OPEN_TICKET_PAU : ' || SQLERRM);
@@ -297,27 +257,31 @@ END;
 /
 
 -- ============================================================
--- 11. VUES MATERIALISEES OS (propriete de Cergy, cache local Pau)
+-- 11. VUES MATERIALISEES — PROPRIETE CERGY (Pau recoit)
 -- ============================================================
--- Pau ne possede pas OS_FAMILY ni OS_VERSION en table locale.
--- Ces MVs sont des copies en lecture seule, refreshees a la demande
--- quand Cergy enregistre un nouvel OS (evenement rare, 2-3x/an).
---
--- Refresh : EXEC DBMS_MVIEW.REFRESH('MV_OS_FAMILY');
---           EXEC DBMS_MVIEW.REFRESH('MV_OS_VERSION');
--- (connecte en CYTECH_PAU, apres que Cergy ait fait ses INSERTs)
+-- Refresh apres chaque ajout cote Cergy :
+--   EXEC DBMS_MVIEW.REFRESH('MV_DEVICE_TYPE');
+--   EXEC DBMS_MVIEW.REFRESH('MV_PERIPHERAL_TYPE');
+--   EXEC DBMS_MVIEW.REFRESH('MV_OS_FAMILY');
+--   EXEC DBMS_MVIEW.REFRESH('MV_OS_VERSION');
+
+CREATE MATERIALIZED VIEW MV_DEVICE_TYPE
+  BUILD IMMEDIATE REFRESH ON DEMAND
+AS SELECT device_type_id, type_code, type_label FROM DEVICE_TYPE@LNK_CERGY;
+
+CREATE MATERIALIZED VIEW MV_PERIPHERAL_TYPE
+  BUILD IMMEDIATE REFRESH ON DEMAND
+AS SELECT peripheral_type_id, type_code, type_label FROM PERIPHERAL_TYPE@LNK_CERGY;
 
 CREATE MATERIALIZED VIEW MV_OS_FAMILY
-  BUILD IMMEDIATE
-  REFRESH ON DEMAND
+  BUILD IMMEDIATE REFRESH ON DEMAND
 AS SELECT os_family_id, family_name FROM OS_FAMILY@LNK_CERGY;
 
 CREATE MATERIALIZED VIEW MV_OS_VERSION
-  BUILD IMMEDIATE
-  REFRESH ON DEMAND
+  BUILD IMMEDIATE REFRESH ON DEMAND
 AS SELECT os_version_id, os_family_id, version_label FROM OS_VERSION@LNK_CERGY;
 
--- Vue acces tickets Cergy (inchangee)
+-- Vue acces tickets Cergy
 CREATE OR REPLACE VIEW V_CERGY_TICKET_MIN AS
 SELECT ticket_id, site_id, device_id, issue_label, ticket_status, opened_at
 FROM MAINTENANCE_TICKET@LNK_CERGY;

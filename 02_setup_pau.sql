@@ -22,12 +22,14 @@
 -- ============================================================
 -- 1. TABLESPACES (SYSDBA)
 -- ============================================================
+
+
 -- CREATE TABLESPACE DATA_PAU
--- DATAFILE 'data_pau.dbf' SIZE 50M AUTOEXTEND ON NEXT 10M MAXSIZE 500M
+-- DATAFILE 'data_pau.dbf' SIZE 50M REUSE AUTOEXTEND ON NEXT 10M MAXSIZE 500M
 -- EXTENT MANAGEMENT LOCAL SEGMENT SPACE MANAGEMENT AUTO;
 
 -- CREATE TABLESPACE IDX_PAU
--- DATAFILE 'idx_pau.dbf' SIZE 20M AUTOEXTEND ON NEXT 5M MAXSIZE 200M
+-- DATAFILE 'idx_pau.dbf' SIZE 20M REUSE AUTOEXTEND ON NEXT 5M MAXSIZE 200M
 -- EXTENT MANAGEMENT LOCAL SEGMENT SPACE MANAGEMENT AUTO;
 
 -- ============================================================
@@ -38,13 +40,13 @@
 -- QUOTA UNLIMITED ON DATA_PAU QUOTA UNLIMITED ON IDX_PAU;
 
 -- GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SYNONYM,
---       CREATE DATABASE LINK, CREATE SEQUENCE, CREATE MATERIALIZED VIEW,
+--       CREATE DATABASE LINK, CREATE CLUSTER, CREATE SEQUENCE, CREATE MATERIALIZED VIEW,
 --       CREATE PROCEDURE, CREATE TRIGGER TO CYTECH_PAU;
 
 -- ============================================================
 -- 3. CONNEXION
 -- ============================================================
--- CONNECT CYTECH_PAU/pau2026;
+-- CONNECT CYTECH_PAU/pau2026@//localhost:1521/FREEPDB1;
 
 -- ============================================================
 -- 4. TABLES DE REFERENCE — PROPRIETE PAU
@@ -120,7 +122,7 @@ CREATE TABLE PERSON (
 ) TABLESPACE DATA_PAU;
 
 CREATE TABLE DEVICE (
-  device_id             NUMBER,
+  device_id             NUMBER CONSTRAINT PK_DEVICE PRIMARY KEY,
   site_id               NUMBER         NOT NULL,
   room_id               NUMBER         NOT NULL,
   assigned_person_id    NUMBER,
@@ -140,7 +142,7 @@ CREATE TABLE DEVICE (
 CLUSTER cl_device_periph_pau(device_id);
 
 CREATE TABLE PERIPHERAL (
-  peripheral_id         NUMBER,
+  peripheral_id         NUMBER CONSTRAINT PK_PERIPHERAL PRIMARY KEY,
   site_id               NUMBER         NOT NULL,
   room_id               NUMBER         NOT NULL,
   assigned_device_id    NUMBER,

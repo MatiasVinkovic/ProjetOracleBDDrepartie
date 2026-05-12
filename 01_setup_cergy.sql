@@ -36,14 +36,16 @@
 -- DEFAULT TABLESPACE DATA_CERGY TEMPORARY TABLESPACE TEMP
 -- QUOTA UNLIMITED ON DATA_CERGY QUOTA UNLIMITED ON IDX_CERGY;
 
+
 -- GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SYNONYM,
 --       CREATE DATABASE LINK, CREATE SEQUENCE, CREATE MATERIALIZED VIEW,
---       CREATE PROCEDURE, CREATE TRIGGER TO CYTECH_CERGY;
+--       CREATE PROCEDURE, CREATE TRIGGER, CREATE CLUSTER TO CYTECH_CERGY;
+
 
 -- ============================================================
 -- 3. CONNEXION
 -- ============================================================
--- CONNECT CYTECH_CERGY/cergy2026;
+-- CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1;
 
 -- ============================================================
 -- 4. TABLES DE REFERENCE — PROPRIETE CERGY
@@ -127,7 +129,7 @@ CREATE TABLE PERSON (
 ) TABLESPACE DATA_CERGY;
 
 CREATE TABLE DEVICE (
-  device_id             NUMBER,
+  device_id             NUMBER        CONSTRAINT PK_DEVICE PRIMARY KEY,
   site_id               NUMBER         NOT NULL,
   room_id               NUMBER         NOT NULL,
   assigned_person_id    NUMBER,
@@ -148,7 +150,7 @@ CREATE TABLE DEVICE (
 CLUSTER cl_device_periph(device_id);
 
 CREATE TABLE PERIPHERAL (
-  peripheral_id         NUMBER,
+  peripheral_id         NUMBER          CONSTRAINT PK_PERIPHERAL PRIMARY KEY,
   site_id               NUMBER         NOT NULL,
   room_id               NUMBER         NOT NULL,
   assigned_device_id    NUMBER,

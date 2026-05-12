@@ -39,7 +39,7 @@ CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1
 -- ---- MVs : SITE et PERSON_ROLE appartiennent a Pau ---- done
 CREATE MATERIALIZED VIEW MV_SITE
   BUILD IMMEDIATE REFRESH ON DEMAND
-AS SELECT site_id, site_code, site_name, city, is_active FROM SITE@LNK_PAU;
+AS SELECT site_id, site_code, site_name,   city, is_active FROM SITE@LNK_PAU;
 
 CREATE MATERIALIZED VIEW MV_PERSON_ROLE -- done
   BUILD IMMEDIATE REFRESH ON DEMAND
@@ -155,6 +155,16 @@ EXCEPTION WHEN OTHERS THEN
   RAISE_APPLICATION_ERROR(-20031, 'PROC_OPEN_TICKET_PAU : ' || SQLERRM);
 END;
 /
+
+-- matias : procédure de refresh des vues référentes
+create or replace procedure refresh_all_views AS
+  -- definir la liste de toutes les vues
+  TYPE t_v_list IS TABLE OF VARCHAR2(30);
+  v_mviews t_v_list := t_v_list('MV_OS_VERSION', 'MV_DEVICE_TYPE', 'MV_PERIPHERAL_TYPE', 'MV_OS_FAMILY');
+
+BEGIN
+FOR view in v_mviews t_v_list.COUNT LOOP
+
 
 
 -- ============================================================

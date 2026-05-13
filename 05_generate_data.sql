@@ -9,7 +9,7 @@
 -- ============================================================
 -- 1. GENERATION CERGY
 -- ============================================================
-CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/XEPDB1
+CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1
 
 SET SERVEROUTPUT ON
 
@@ -143,7 +143,7 @@ END;
 -- ============================================================
 -- 2. GENERATION PAU
 -- ============================================================
-CONNECT CYTECH_PAU/pau2026@//localhost:1521/XEPDB1
+CONNECT CYTECH_PAU/pau2026@//localhost:1521/FREEPDB1
 
 SET SERVEROUTPUT ON
 

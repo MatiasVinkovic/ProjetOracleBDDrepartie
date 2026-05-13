@@ -121,21 +121,52 @@ CREATE TABLE PERSON (
   CONSTRAINT CK_PERSON_STATUS CHECK (person_status IN ('ACTIVE','INACTIVE'))
 ) TABLESPACE DATA_PAU;
 
+-- ============================================================
+-- 5. TABLES LOCALES PAU (MAJ RÉSEAU)
+-- ============================================================
+
+CREATE TABLE VLAN (
+  vlan_id        NUMBER        CONSTRAINT PK_VLAN_PAU PRIMARY KEY,
+  site_id        NUMBER        NOT NULL,
+  vlan_number    NUMBER        NOT NULL,
+  vlan_name      VARCHAR2(80)  NOT NULL,
+  CONSTRAINT CK_VLAN_SITE_PAU CHECK (site_id = 2),
+  CONSTRAINT UK_VLAN_PAU UNIQUE (site_id, vlan_number)
+) TABLESPACE DATA_PAU;
+
+CREATE TABLE NETWORK_SWITCH (
+  switch_id      NUMBER        CONSTRAINT PK_SWITCH_PAU PRIMARY KEY,
+  site_id        NUMBER        NOT NULL,
+  room_id        NUMBER        NOT NULL,
+  switch_name    VARCHAR2(80)  NOT NULL,
+  ip_address     VARCHAR2(15)  NOT NULL,
+  mac_address    VARCHAR2(17)  CONSTRAINT UK_SWITCH_MAC_PAU UNIQUE,
+  CONSTRAINT FK_SWITCH_ROOM_PAU FOREIGN KEY (room_id) REFERENCES ROOM(room_id),
+  CONSTRAINT CK_SWITCH_SITE_PAU CHECK (site_id = 2)
+) TABLESPACE DATA_PAU;
+
 CREATE TABLE DEVICE (
-  device_id             NUMBER CONSTRAINT PK_DEVICE PRIMARY KEY,
+  device_id             NUMBER         CONSTRAINT PK_DEVICE PRIMARY KEY,
   site_id               NUMBER         NOT NULL,
   room_id               NUMBER         NOT NULL,
   assigned_person_id    NUMBER,
   device_type_id        NUMBER         NOT NULL,
   os_version_id         NUMBER,
+  switch_id             NUMBER,
+  vlan_id               NUMBER,
   asset_tag             VARCHAR2(40)   CONSTRAINT UK_DEVICE_ASSET_TAG UNIQUE NOT NULL,
   device_name           VARCHAR2(80)   NOT NULL,
   serial_number         VARCHAR2(80)   CONSTRAINT UK_DEVICE_SERIAL UNIQUE,
+  ip_address            VARCHAR2(15),
+  mac_address           VARCHAR2(17)   CONSTRAINT UK_DEVICE_MAC UNIQUE,
   purchase_date         DATE,
   device_status         VARCHAR2(20)   DEFAULT 'IN_SERVICE' NOT NULL,
   CONSTRAINT FK_DEVICE_SITE   FOREIGN KEY (site_id)            REFERENCES SITE(site_id),
   CONSTRAINT FK_DEVICE_ROOM   FOREIGN KEY (room_id)            REFERENCES ROOM(room_id),
   CONSTRAINT FK_DEVICE_PERSON FOREIGN KEY (assigned_person_id) REFERENCES PERSON(person_id),
+  CONSTRAINT FK_DEVICE_SWITCH FOREIGN KEY (switch_id)          REFERENCES NETWORK_SWITCH(switch_id),
+  CONSTRAINT FK_DEVICE_VLAN   FOREIGN KEY (vlan_id)            REFERENCES VLAN(vlan_id),
+  CONSTRAINT UK_DEVICE_IP UNIQUE (ip_address),
   CONSTRAINT CK_DEVICE_SITE CHECK (site_id = 2),
   CONSTRAINT CK_DEVICE_STATUS CHECK (device_status IN ('IN_SERVICE','IN_STOCK','IN_REPAIR','RETIRED'))
 )
@@ -168,6 +199,26 @@ CREATE TABLE DEVICE_ASSIGNMENT (
   CONSTRAINT FK_ASSIGN_PERSON FOREIGN KEY (person_id) REFERENCES PERSON(person_id),
   CONSTRAINT CK_ASSIGN_DATES CHECK (returned_at IS NULL OR returned_at >= assigned_at)
 ) TABLESPACE DATA_PAU;
+
+-- ============================================================
+-- 5c. DONNEES LOGIQUES PAU (VUES)
+-- ============================================================
+CREATE OR REPLACE VIEW V_NETWORK_TOPOLOGY AS
+SELECT 
+  d.asset_tag,
+  d.device_name,
+  r.room_code,
+  s.switch_name,
+  v.vlan_name,
+  d.ip_address,
+  d.mac_address,
+  d.device_status
+FROM DEVICE d
+INNER JOIN ROOM r ON d.room_id = r.room_id
+LEFT JOIN NETWORK_SWITCH s ON d.switch_id = s.switch_id
+LEFT JOIN VLAN v ON d.vlan_id = v.vlan_id
+WHERE d.site_id = 2
+ORDER BY d.asset_tag;
 
 -- ============================================================
 -- 6. INDEX
@@ -209,11 +260,23 @@ INSERT INTO PERSON VALUES (1002, 2, 1, 'garcia.lucia', 'Garcia', 'Lucia', 'lucia
 INSERT INTO PERSON VALUES (1003, 2, 2, 'lebrun.theo',  'Lebrun', 'Theo',  'theo.lebrun@cytech.fr',      'ACTIVE');
 INSERT INTO PERSON VALUES (1004, 2, 1, 'morel.nina',   'Morel',  'Nina',  'nina.morel@cytech.fr',       'ACTIVE');
 
--- device_type_id et os_version_id : valeurs coherentes avec les MVs Cergy (1-3 et 1-4)
-INSERT INTO DEVICE VALUES (1001, 2, 1001, 1002, 1, 1, 'PAU-PC-001',  'PC Salle P101-01',        'SN-PAU-PC-001',  DATE '2024-09-01', 'IN_SERVICE');
-INSERT INTO DEVICE VALUES (1002, 2, 1001, NULL, 1, 2, 'PAU-PC-002',  'PC Salle P101-02',        'SN-PAU-PC-002',  DATE '2024-09-01', 'IN_SERVICE');
-INSERT INTO DEVICE VALUES (1003, 2, 1002, 1004, 3, 3, 'PAU-TAB-001', 'Tablette Salle P201-01',  'SN-PAU-TAB-001', DATE '2025-02-03', 'IN_SERVICE');
-INSERT INTO DEVICE VALUES (1004, 2, 1003, 1001, 2, 1, 'PAU-LAP-001', 'Portable Administration', 'SN-PAU-LAP-001', DATE '2023-11-20', 'IN_SERVICE');
+-- ============================================================
+-- 8a. DONNEES RESEAU PAU
+-- ============================================================
+INSERT INTO VLAN VALUES (2000, 2, 10, 'Administration Pau');
+INSERT INTO VLAN VALUES (2001, 2, 20, 'Enseignement Pau');
+INSERT INTO VLAN VALUES (2002, 2, 30, 'Laboratoires Pau');
+
+INSERT INTO NETWORK_SWITCH VALUES (2000, 2, 1001, 'Switch Salle P101', '10.2.0.1', '00:2A:2B:02:01:01');
+INSERT INTO NETWORK_SWITCH VALUES (2001, 2, 1002, 'Switch Salle P201', '10.2.0.2', '00:2A:2B:02:01:02');
+
+-- ============================================================
+-- 8b. DONNEES DEVICES PAU AVEC RESEAU
+-- ============================================================
+INSERT INTO DEVICE VALUES (1001, 2, 1001, 1002, 1, 1, 2000, 2000, 'PAU-PC-001',  'PC Salle P101-01',        'SN-PAU-PC-001',  '10.2.10.10', '00:2A:2B:AA:BB:01', DATE '2024-09-01', 'IN_SERVICE');
+INSERT INTO DEVICE VALUES (1002, 2, 1001, NULL, 1, 2, 2000, 2001, 'PAU-PC-002',  'PC Salle P101-02',        'SN-PAU-PC-002',  '10.2.20.10', '00:2A:2B:AA:BB:02', DATE '2024-09-01', 'IN_SERVICE');
+INSERT INTO DEVICE VALUES (1003, 2, 1002, 1004, 3, 3, 2001, 2002, 'PAU-TAB-001', 'Tablette Salle P201-01',  'SN-PAU-TAB-001', '10.2.30.10', '00:2A:2B:AA:BB:03', DATE '2025-02-03', 'IN_SERVICE');
+INSERT INTO DEVICE VALUES (1004, 2, 1003, 1001, 2, 1, 2001, 2000, 'PAU-LAP-001', 'Portable Administration', 'SN-PAU-LAP-001', '10.2.10.11', '00:2A:2B:AA:BB:04', DATE '2023-11-20', 'IN_SERVICE');
 
 -- peripheral_type_id : valeurs coherentes avec MV_PERIPHERAL_TYPE Cergy (1-5)
 INSERT INTO PERIPHERAL VALUES (1001, 2, 1001, 1001, 1, 'Ecran 24 pouces P101-01',  'SN-PAU-SCR-001', 'ASSIGNED');

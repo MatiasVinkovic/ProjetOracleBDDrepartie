@@ -127,27 +127,55 @@ CREATE TABLE PERSON (
   CONSTRAINT CK_PERSON_SITE CHECK (site_id = 1),
   CONSTRAINT CK_PERSON_STATUS CHECK (person_status IN ('ACTIVE','INACTIVE'))
 ) TABLESPACE DATA_CERGY;
+-- ============================================================
+-- 5. TABLES LOCALES CERGY (MAJ RÉSEAU)
+-- ============================================================
 
+-- A insérer après ROOM et avant DEVICE
+CREATE TABLE VLAN (
+  vlan_id        NUMBER        CONSTRAINT PK_VLAN PRIMARY KEY,
+  site_id        NUMBER        NOT NULL,
+  vlan_number    NUMBER        NOT NULL,
+  vlan_name      VARCHAR2(80)  NOT NULL,
+  CONSTRAINT CK_VLAN_SITE CHECK (site_id = 1),
+  CONSTRAINT UK_VLAN UNIQUE (site_id, vlan_number)
+) TABLESPACE DATA_CERGY;
+
+CREATE TABLE NETWORK_SWITCH (
+  switch_id      NUMBER        CONSTRAINT PK_SWITCH PRIMARY KEY,
+  site_id        NUMBER        NOT NULL,
+  room_id        NUMBER        NOT NULL,
+  switch_name    VARCHAR2(80)  NOT NULL,
+  ip_address     VARCHAR2(15)  NOT NULL,
+  mac_address    VARCHAR2(17)  CONSTRAINT UK_SWITCH_MAC UNIQUE,
+  CONSTRAINT FK_SWITCH_ROOM FOREIGN KEY (room_id) REFERENCES ROOM(room_id),
+  CONSTRAINT CK_SWITCH_SITE CHECK (site_id = 1)
+) TABLESPACE DATA_CERGY;
+
+-- Modifie ta table DEVICE existante pour ajouter ces colonnes
 CREATE TABLE DEVICE (
-  device_id             NUMBER        CONSTRAINT PK_DEVICE PRIMARY KEY,
+  device_id             NUMBER         CONSTRAINT PK_DEVICE PRIMARY KEY,
   site_id               NUMBER         NOT NULL,
   room_id               NUMBER         NOT NULL,
   assigned_person_id    NUMBER,
   device_type_id        NUMBER         NOT NULL,
   os_version_id         NUMBER,
+  switch_id             NUMBER,        -- Nouveau
+  vlan_id               NUMBER,        -- Nouveau
   asset_tag             VARCHAR2(40)   CONSTRAINT UK_DEVICE_ASSET_TAG UNIQUE NOT NULL,
   device_name           VARCHAR2(80)   NOT NULL,
   serial_number         VARCHAR2(80)   CONSTRAINT UK_DEVICE_SERIAL UNIQUE,
+  ip_address            VARCHAR2(15),  -- Nouveau
+  mac_address           VARCHAR2(17)   CONSTRAINT UK_DEVICE_MAC UNIQUE, -- Nouveau
   purchase_date         DATE,
   device_status         VARCHAR2(20)   DEFAULT 'IN_SERVICE' NOT NULL,
   CONSTRAINT FK_DEVICE_ROOM   FOREIGN KEY (room_id)            REFERENCES ROOM(room_id),
   CONSTRAINT FK_DEVICE_PERSON FOREIGN KEY (assigned_person_id) REFERENCES PERSON(person_id),
-  CONSTRAINT FK_DEVICE_TYPE   FOREIGN KEY (device_type_id)     REFERENCES DEVICE_TYPE(device_type_id),
-  CONSTRAINT FK_DEVICE_OS     FOREIGN KEY (os_version_id)      REFERENCES OS_VERSION(os_version_id),
-  CONSTRAINT CK_DEVICE_SITE CHECK (site_id = 1),
-  CONSTRAINT CK_DEVICE_STATUS CHECK (device_status IN ('IN_SERVICE','IN_STOCK','IN_REPAIR','RETIRED'))
-) 
-CLUSTER cl_device_periph(device_id);
+  CONSTRAINT FK_DEVICE_SWITCH FOREIGN KEY (switch_id)          REFERENCES NETWORK_SWITCH(switch_id),
+  CONSTRAINT FK_DEVICE_VLAN   FOREIGN KEY (vlan_id)            REFERENCES VLAN(vlan_id),
+  CONSTRAINT UK_DEVICE_IP     UNIQUE (ip_address),
+  CONSTRAINT CK_DEVICE_SITE CHECK (site_id = 1)
+) CLUSTER cl_device_periph(device_id);
 
 CREATE TABLE PERIPHERAL (
   peripheral_id         NUMBER          CONSTRAINT PK_PERIPHERAL PRIMARY KEY,
@@ -197,6 +225,43 @@ CREATE TABLE MAINTENANCE_TICKET (
   CONSTRAINT CK_TICKET_STATUS CHECK (ticket_status IN ('OPEN','IN_PROGRESS','CLOSED')),
   CONSTRAINT CK_TICKET_DATES  CHECK (closed_at IS NULL OR closed_at >= opened_at)
 ) TABLESPACE DATA_CERGY;
+
+-- ============================================================
+-- 5c. DONNEES LOGIQUES CERGY (VUES)
+-- ============================================================
+CREATE OR REPLACE VIEW V_NETWORK_TOPOLOGY AS
+SELECT 
+  d.asset_tag,
+  d.device_name,
+  r.room_code,
+  s.switch_name,
+  v.vlan_name,
+  d.ip_address,
+  d.mac_address,
+  d.device_status
+FROM DEVICE d
+INNER JOIN ROOM r ON d.room_id = r.room_id
+LEFT JOIN NETWORK_SWITCH s ON d.switch_id = s.switch_id
+LEFT JOIN VLAN v ON d.vlan_id = v.vlan_id
+WHERE d.site_id = 1
+ORDER BY d.asset_tag;
+
+CREATE OR REPLACE VIEW V_ACTIVE_TICKETS AS
+SELECT 
+  t.ticket_id,
+  t.opened_at,
+  t.issue_label,
+  d.asset_tag,
+  d.device_name,
+  d.ip_address,
+  (p_owner.first_name || ' ' || p_owner.last_name) AS owner_name,
+  p_owner.email
+FROM MAINTENANCE_TICKET t
+INNER JOIN DEVICE d ON t.device_id = d.device_id
+INNER JOIN PERSON p_owner ON t.opened_by_person_id = p_owner.person_id
+WHERE t.site_id = 1 
+  AND t.ticket_status IN ('OPEN', 'IN_PROGRESS')
+ORDER BY t.opened_at DESC;
 
 -- ============================================================
 -- 6. INDEX
@@ -255,10 +320,23 @@ INSERT INTO PERSON VALUES (2, 1, 1, 'martin.alice',  'Martin',  'Alice', 'alice.
 INSERT INTO PERSON VALUES (3, 1, 2, 'dupont.leo',    'Dupont',  'Leo',   'leo.dupont@cytech.fr',    'ACTIVE');
 INSERT INTO PERSON VALUES (4, 1, 1, 'bernard.emma',  'Bernard', 'Emma',  'emma.bernard@cytech.fr',  'ACTIVE');
 
-INSERT INTO DEVICE VALUES (1, 1, 1, 2, 1, 1, 'CGY-PC-001',  'PC Salle A101-01',       'SN-CGY-PC-001',  DATE '2024-09-01', 'IN_SERVICE');
-INSERT INTO DEVICE VALUES (2, 1, 1, NULL, 1, 1, 'CGY-PC-002','PC Salle A101-02',       'SN-CGY-PC-002',  DATE '2024-09-01', 'IN_REPAIR');
-INSERT INTO DEVICE VALUES (3, 1, 2, 4, 3, 3,   'CGY-TAB-001','Tablette Salle A202-01', 'SN-CGY-TAB-001', DATE '2025-01-10', 'IN_SERVICE');
-INSERT INTO DEVICE VALUES (4, 1, 3, 1, 2, 1,   'CGY-LAP-001','Portable Administration','SN-CGY-LAP-001', DATE '2023-10-15', 'IN_SERVICE');
+-- ============================================================
+-- 8a. DONNEES RESEAU CERGY
+-- ============================================================
+INSERT INTO VLAN VALUES (1, 1, 10, 'Administration Cergy');
+INSERT INTO VLAN VALUES (2, 1, 20, 'Enseignement Cergy');
+INSERT INTO VLAN VALUES (3, 1, 30, 'Laboratoires Cergy');
+
+INSERT INTO NETWORK_SWITCH VALUES (1, 1, 1, 'Switch Salle A101', '10.1.0.1', '00:1A:2B:01:01:01');
+INSERT INTO NETWORK_SWITCH VALUES (2, 1, 2, 'Switch Salle A202', '10.1.0.2', '00:1A:2B:01:01:02');
+
+-- ============================================================
+-- 8b. DONNEES DEVICES CERGY AVEC RESEAU
+-- ============================================================
+INSERT INTO DEVICE VALUES (1, 1, 1, 2, 1, 1, 1, 1, 'CGY-PC-001',  'PC Salle A101-01',       'SN-CGY-PC-001',  '10.1.10.10', '00:1A:2B:AA:BB:01', DATE '2024-09-01', 'IN_SERVICE');
+INSERT INTO DEVICE VALUES (2, 1, 1, NULL, 1, 1, 1, 2, 'CGY-PC-002', 'PC Salle A101-02',       'SN-CGY-PC-002',  '10.1.20.10', '00:1A:2B:AA:BB:02', DATE '2024-09-01', 'IN_REPAIR');
+INSERT INTO DEVICE VALUES (3, 1, 2, 4, 3, 3, 2, 3, 'CGY-TAB-001', 'Tablette Salle A202-01', 'SN-CGY-TAB-001', '10.1.30.10', '00:1A:2B:AA:BB:03', DATE '2025-01-10', 'IN_SERVICE');
+INSERT INTO DEVICE VALUES (4, 1, 3, 1, 2, 1, 2, 1, 'CGY-LAP-001', 'Portable Administration', 'SN-CGY-LAP-001', '10.1.10.11', '00:1A:2B:AA:BB:04', DATE '2023-10-15', 'IN_SERVICE');
 
 INSERT INTO PERIPHERAL VALUES (1, 1, 1, 1, 1, 'Ecran 24 pouces A101-01', 'SN-CGY-SCR-001', 'ASSIGNED');
 INSERT INTO PERIPHERAL VALUES (2, 1, 1, 1, 2, 'Souris A101-01',           'SN-CGY-MOU-001', 'ASSIGNED');

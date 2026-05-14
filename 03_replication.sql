@@ -156,15 +156,26 @@ EXCEPTION WHEN OTHERS THEN
 END;
 /
 
--- matias : procédure de refresh des vues référentes
-create or replace procedure refresh_all_views AS
-  -- definir la liste de toutes les vues
+-- matias : -> faikidine par dessus 
+-- ---- Procedure de refresh global des MVs cote Pau ----
+-- Permet de declencher en un appel le refresh des 4 MVs proprietees par
+-- Cergy mais consommees par Pau. A executer apres tout INSERT/UPDATE sur
+-- DEVICE_TYPE, PERIPHERAL_TYPE, OS_FAMILY ou OS_VERSION cote Cergy.
+CREATE OR REPLACE PROCEDURE REFRESH_ALL_VIEWS AS
   TYPE t_v_list IS TABLE OF VARCHAR2(30);
-  v_mviews t_v_list := t_v_list('MV_OS_VERSION', 'MV_DEVICE_TYPE', 'MV_PERIPHERAL_TYPE', 'MV_OS_FAMILY');
-
+  v_mviews t_v_list := t_v_list(
+    'MV_DEVICE_TYPE',
+    'MV_PERIPHERAL_TYPE',
+    'MV_OS_FAMILY',
+    'MV_OS_VERSION'
+  );
 BEGIN
-FOR view in v_mviews t_v_list.COUNT LOOP
-
+  FOR i IN 1 .. v_mviews.COUNT LOOP
+    DBMS_MVIEW.REFRESH(v_mviews(i));
+    DBMS_OUTPUT.PUT_LINE('Refresh ' || v_mviews(i) || ' OK');
+  END LOOP;
+END REFRESH_ALL_VIEWS;
+/
 
 
 -- ============================================================

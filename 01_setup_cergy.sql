@@ -45,7 +45,7 @@
 -- ============================================================
 -- 3. CONNEXION
 -- ============================================================
--- CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1;
+CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1
 
 -- ============================================================
 -- 4. TABLES DE REFERENCE — PROPRIETE CERGY

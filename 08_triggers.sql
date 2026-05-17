@@ -89,9 +89,9 @@ DECLARE
 BEGIN
   SELECT COUNT(*) INTO v_n FROM MV_PERSON_ROLE WHERE role_id = :NEW.role_id;
   IF v_n = 0 THEN
-    proc_log_error('trg_check_role_cergy', 'role_id=' || :NEW.role_id);
     raise_application_error(-20110, 'role_id ' || :NEW.role_id || ' inconnu');
   END IF;
+<<<<<<< HEAD
 =======
 -- Cergy
 -- ============================================================
@@ -134,11 +134,16 @@ BEGIN
   IF v_n = 0 THEN
     raise_application_error(-20110, 'role_id ' || :NEW.role_id || ' inconnu');
   END IF;
+=======
+>>>>>>> 159c7ce (raise avant log pour pouvoir capturer err_code et err_msg)
 EXCEPTION
   WHEN OTHERS THEN
     proc_log_error('trg_check_role_cergy', 'role_id=' || :NEW.role_id);
     RAISE;
+<<<<<<< HEAD
 >>>>>>> users/FA_archi
+=======
+>>>>>>> 159c7ce (raise avant log pour pouvoir capturer err_code et err_msg)
 END;
 /
 
@@ -176,6 +181,7 @@ BEFORE UPDATE OF device_status ON DEVICE
 FOR EACH ROW
 WHEN (NEW.device_status = 'RETIRED' AND NEW.assigned_person_id IS NOT NULL)
 BEGIN
+<<<<<<< HEAD
   raise_application_error(-20102,
     'device ' || :NEW.device_id || ' encore assigné, libérer avant de retirer');
 EXCEPTION
@@ -188,6 +194,14 @@ EXCEPTION
   raise_application_error(-20102,
     'device ' || :NEW.device_id || ' encore assigné, libérer avant de retirer');
 >>>>>>> bf885b7 (simplification, partie 1)
+=======
+  raise_application_error(-20102,
+    'device ' || :NEW.device_id || ' encore assigné, libérer avant de retirer');
+EXCEPTION
+  WHEN OTHERS THEN
+    proc_log_error('trg_device_retired_guard', 'device_id=' || :NEW.device_id);
+    RAISE;
+>>>>>>> 159c7ce (raise avant log pour pouvoir capturer err_code et err_msg)
 END;
 /
 
@@ -222,12 +236,12 @@ DECLARE
 BEGIN
   SELECT person_status INTO v_st FROM PERSON WHERE person_id = :NEW.assigned_person_id;
   IF v_st <> 'ACTIVE' THEN
-    proc_log_error('trg_assign_active', 'person_id=' || :NEW.assigned_person_id);
     raise_application_error(-20103,
       'personne ' || :NEW.assigned_person_id || ' INACTIVE');
   END IF;
 EXCEPTION
   WHEN NO_DATA_FOUND THEN
+<<<<<<< HEAD
 <<<<<<< HEAD
     PROC_LOG_ERROR(
       'EX_PERSON_INACTIVE',
@@ -246,15 +260,20 @@ BEGIN
   END IF;
 EXCEPTION
   WHEN NO_DATA_FOUND THEN
+=======
+>>>>>>> 159c7ce (raise avant log pour pouvoir capturer err_code et err_msg)
     proc_log_error('trg_assign_active', 'person_id=' || :NEW.assigned_person_id || ' inexistante');
     raise_application_error(-20103, 'personne ' || :NEW.assigned_person_id || ' inexistante');
   WHEN OTHERS THEN
     proc_log_error('trg_assign_active', 'person_id=' || :NEW.assigned_person_id);
     RAISE;
+<<<<<<< HEAD
 >>>>>>> users/FA_archi
 =======
     raise_application_error(-20103, 'personne inexistante');
 >>>>>>> bf885b7 (simplification, partie 1)
+=======
+>>>>>>> 159c7ce (raise avant log pour pouvoir capturer err_code et err_msg)
 END;
 /
 
@@ -275,13 +294,16 @@ BEFORE UPDATE ON MAINTENANCE_TICKET
 FOR EACH ROW
 BEGIN
   IF :OLD.ticket_status = 'CLOSED' THEN
-    proc_log_error('trg_ticket_close_auto', 'ticket=' || :OLD.ticket_id);
     raise_application_error(-20105, 'ticket ' || :OLD.ticket_id || ' déjà CLOSED');
   END IF;
 
   IF :NEW.ticket_status = 'CLOSED' AND :NEW.closed_at IS NULL THEN
     :NEW.closed_at := SYSDATE;
   END IF;
+EXCEPTION
+  WHEN OTHERS THEN
+    proc_log_error('trg_ticket_close_auto', 'ticket=' || :OLD.ticket_id);
+    RAISE;
 END;
 /
 
@@ -357,11 +379,10 @@ DECLARE
 BEGIN
   SELECT COUNT(*) INTO v_n FROM DEVICE WHERE assigned_person_id = :OLD.person_id;
   IF v_n > 0 THEN
-    proc_log_error('trg_person_deactivate',
-                   'person_id=' || :OLD.person_id || ' devices=' || v_n);
     raise_application_error(-20121,
       'personne ' || :OLD.person_id || ' a encore ' || v_n || ' device(s) assigné(s)');
   END IF;
+<<<<<<< HEAD
 =======
 -- 5. quand on clôture une affectation, on libère le device
 -- ------------------------------------------------------------
@@ -448,6 +469,8 @@ BEGIN
     raise_application_error(-20121,
       'personne ' || :OLD.person_id || ' a encore ' || v_n || ' device(s) assigné(s)');
   END IF;
+=======
+>>>>>>> 159c7ce (raise avant log pour pouvoir capturer err_code et err_msg)
 EXCEPTION
   WHEN OTHERS THEN
     proc_log_error('trg_person_deactivate',
@@ -534,9 +557,12 @@ DECLARE v_n NUMBER;
 BEGIN
   SELECT COUNT(*) INTO v_n FROM MV_DEVICE_TYPE WHERE device_type_id = :NEW.device_type_id;
   IF v_n = 0 THEN
-    proc_log_error('trg_check_devtype_pau', 'type=' || :NEW.device_type_id);
     raise_application_error(-20111, 'device_type_id ' || :NEW.device_type_id || ' inconnu');
   END IF;
+EXCEPTION
+  WHEN OTHERS THEN
+    proc_log_error('trg_check_devtype_pau', 'type=' || :NEW.device_type_id);
+    RAISE;
 END;
 /
 
@@ -548,9 +574,12 @@ DECLARE v_n NUMBER;
 BEGIN
   SELECT COUNT(*) INTO v_n FROM MV_OS_VERSION WHERE os_version_id = :NEW.os_version_id;
   IF v_n = 0 THEN
-    proc_log_error('trg_check_os_pau', 'os=' || :NEW.os_version_id);
     raise_application_error(-20112, 'os_version_id ' || :NEW.os_version_id || ' inconnu');
   END IF;
+EXCEPTION
+  WHEN OTHERS THEN
+    proc_log_error('trg_check_os_pau', 'os=' || :NEW.os_version_id);
+    RAISE;
 END;
 /
 
@@ -561,9 +590,12 @@ DECLARE v_n NUMBER;
 BEGIN
   SELECT COUNT(*) INTO v_n FROM MV_PERIPHERAL_TYPE WHERE peripheral_type_id = :NEW.peripheral_type_id;
   IF v_n = 0 THEN
-    proc_log_error('trg_check_periph_pau', 'type=' || :NEW.peripheral_type_id);
     raise_application_error(-20113, 'peripheral_type_id ' || :NEW.peripheral_type_id || ' inconnu');
   END IF;
+EXCEPTION
+  WHEN OTHERS THEN
+    proc_log_error('trg_check_periph_pau', 'type=' || :NEW.peripheral_type_id);
+    RAISE;
 END;
 /
 
@@ -574,8 +606,11 @@ BEFORE UPDATE OF device_status ON DEVICE
 FOR EACH ROW
 WHEN (NEW.device_status = 'RETIRED' AND NEW.assigned_person_id IS NOT NULL)
 BEGIN
-  proc_log_error('trg_device_retired_guard_pau', 'device_id=' || :NEW.device_id);
-  raise_application_error(-20102, 'device encore assigné, libérer avant de retirer');
+  raise_application_error(-20102, 'device ' || :NEW.device_id || ' encore assigné, libérer avant de retirer');
+EXCEPTION
+  WHEN OTHERS THEN
+    proc_log_error('trg_device_retired_guard_pau', 'device_id=' || :NEW.device_id);
+    RAISE;
 END;
 /
 
@@ -587,12 +622,15 @@ DECLARE v_st VARCHAR2(20);
 BEGIN
   SELECT person_status INTO v_st FROM PERSON WHERE person_id = :NEW.assigned_person_id;
   IF v_st <> 'ACTIVE' THEN
-    proc_log_error('trg_assign_active_pau', 'person_id=' || :NEW.assigned_person_id);
-    raise_application_error(-20103, 'personne INACTIVE');
+    raise_application_error(-20103, 'personne ' || :NEW.assigned_person_id || ' INACTIVE');
   END IF;
 EXCEPTION
   WHEN NO_DATA_FOUND THEN
-    raise_application_error(-20103, 'personne inexistante');
+    proc_log_error('trg_assign_active_pau', 'person_id=' || :NEW.assigned_person_id || ' inexistante');
+    raise_application_error(-20103, 'personne ' || :NEW.assigned_person_id || ' inexistante');
+  WHEN OTHERS THEN
+    proc_log_error('trg_assign_active_pau', 'person_id=' || :NEW.assigned_person_id);
+    RAISE;
 END;
 /
 
@@ -713,10 +751,14 @@ DECLARE v_n NUMBER;
 BEGIN
   SELECT COUNT(*) INTO v_n FROM DEVICE WHERE assigned_person_id = :OLD.person_id;
   IF v_n > 0 THEN
-    proc_log_error('trg_person_deactivate_pau', 'person=' || :OLD.person_id);
     raise_application_error(-20121,
       'personne ' || :OLD.person_id || ' a encore ' || v_n || ' device(s)');
   END IF;
+EXCEPTION
+  WHEN OTHERS THEN
+    proc_log_error('trg_person_deactivate_pau',
+                   'person_id=' || :OLD.person_id || ' devices=' || v_n);
+    RAISE;
 END;
 /
 

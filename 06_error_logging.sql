@@ -69,14 +69,20 @@ CREATE INDEX idx_error_ts ON ERROR_LOG(error_ts) TABLESPACE IDX_CERGY;
 
 -- helper : pose une ligne dans ERROR_LOG même si la transaction parente
 -- fait ROLLBACK. pattern du TP7 (cf. inserer_ligne_erreur).
+-- note : SQLCODE et SQLERRM doivent être assignés à des variables avant
+-- d'être utilisés dans un INSERT (sinon ORA-00984).
 CREATE OR REPLACE PROCEDURE proc_log_error(
   p_module   IN VARCHAR2,
   p_context  IN VARCHAR2 DEFAULT NULL
 ) AS
   PRAGMA AUTONOMOUS_TRANSACTION;
+  v_code NUMBER;
+  v_msg  VARCHAR2(500);
 BEGIN
+  v_code := SQLCODE;
+  v_msg  := SUBSTR(SQLERRM, 1, 500);
   INSERT INTO ERROR_LOG(error_id, err_code, err_msg, module_name, context_info)
-  VALUES (seq_error_log.NEXTVAL, SQLCODE, SUBSTR(SQLERRM, 1, 500), p_module, p_context);
+  VALUES (seq_error_log.NEXTVAL, v_code, v_msg, p_module, p_context);
   COMMIT;
 EXCEPTION
   WHEN OTHERS THEN
@@ -113,7 +119,10 @@ CREATE OR REPLACE PROCEDURE proc_log_error(
   p_context  IN VARCHAR2 DEFAULT NULL
 ) AS
   PRAGMA AUTONOMOUS_TRANSACTION;
+  v_code NUMBER;
+  v_msg  VARCHAR2(500);
 BEGIN
+<<<<<<< HEAD
 <<<<<<< HEAD
   INSERT INTO ERROR_LOG (
     error_id, error_ts, site_id, sql_code, sql_errm, app_code,
@@ -207,6 +216,12 @@ BEGIN
   INSERT INTO ERROR_LOG(error_id, err_code, err_msg, module_name, context_info)
   VALUES (seq_error_log.NEXTVAL, SQLCODE, SUBSTR(SQLERRM, 1, 500), p_module, p_context);
 >>>>>>> bf885b7 (simplification, partie 1)
+=======
+  v_code := SQLCODE;
+  v_msg  := SUBSTR(SQLERRM, 1, 500);
+  INSERT INTO ERROR_LOG(error_id, err_code, err_msg, module_name, context_info)
+  VALUES (seq_error_log.NEXTVAL, v_code, v_msg, p_module, p_context);
+>>>>>>> 9d8032a (sql code er eerrm non utilisable sans les assigner à des variables locales)
   COMMIT;
 EXCEPTION
   WHEN OTHERS THEN

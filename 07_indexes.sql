@@ -1,6 +1,7 @@
 -- ============================================================
 -- 07_indexes.sql
 <<<<<<< HEAD
+<<<<<<< HEAD
 -- Projet GLPI BDDR - Index supplementaires
 --
 -- A executer APRES 01_setup_cergy.sql et 02_setup_pau.sql.
@@ -39,73 +40,54 @@
 -- index supplémentaires : sur les FK non indexées (jointures
 -- fréquentes) + quelques filtres métier.
 >>>>>>> users/FA_archi
+=======
+-- index supplémentaires : sur les FK non indexées (jointures
+-- fréquentes) + quelques filtres métier.
+>>>>>>> bf885b7 (simplification, partie 1)
 -- ============================================================
 
 
 -- ============================================================
 <<<<<<< HEAD
+<<<<<<< HEAD
 -- PARTIE 1 : SITE CERGY
+=======
+-- Cergy
+>>>>>>> bf885b7 (simplification, partie 1)
 -- ============================================================
 CONNECT CYTECH_CERGY/cergy2026@//localhost:1521/FREEPDB1
 
--- ----------------------------------------------------------------
--- (A) Index sur FK non indexees
--- ----------------------------------------------------------------
--- MAINTENANCE_TICKET : 3 FK / colonnes referencees sans index
---   - opened_by_person_id : FK_TICKET_OPENED_BY vers PERSON
---   - technician_id        : FK_TICKET_TECH vers PERSON
---   - device_id            : pas de FK declaree (cross-site) mais
---                            filtree par PROC_CREATE_TICKET ligne 65
-CREATE INDEX IDX_TICKET_OPENED_BY ON MAINTENANCE_TICKET(opened_by_person_id) TABLESPACE IDX_CERGY;
-CREATE INDEX IDX_TICKET_TECH      ON MAINTENANCE_TICKET(technician_id)       TABLESPACE IDX_CERGY;
-CREATE INDEX IDX_TICKET_DEVICE    ON MAINTENANCE_TICKET(device_id)           TABLESPACE IDX_CERGY;
+-- index sur les FK qui n'en avaient pas. sans ça, les jointures sur ces
+-- colonnes font un FULL SCAN.
 
--- DEVICE : 3 FK / refs sans index (switch, vlan, os_version)
---   Note : on N'indexe PAS device_id (PK -> deja indexe par le cluster)
---   ni room_id (deja IDX_DEVICE_ROOM dans 01_setup_cergy.sql).
-CREATE INDEX IDX_DEVICE_SWITCH ON DEVICE(switch_id)     TABLESPACE IDX_CERGY;
-CREATE INDEX IDX_DEVICE_VLAN   ON DEVICE(vlan_id)       TABLESPACE IDX_CERGY;
-CREATE INDEX IDX_DEVICE_OS     ON DEVICE(os_version_id) TABLESPACE IDX_CERGY;
+-- MAINTENANCE_TICKET : FK vers PERSON et référence logique vers DEVICE
+CREATE INDEX idx_ticket_opened_by ON MAINTENANCE_TICKET(opened_by_person_id) TABLESPACE IDX_CERGY;
+CREATE INDEX idx_ticket_tech      ON MAINTENANCE_TICKET(technician_id)       TABLESPACE IDX_CERGY;
+CREATE INDEX idx_ticket_device    ON MAINTENANCE_TICKET(device_id)           TABLESPACE IDX_CERGY;
 
--- PERIPHERAL : 2 FK sans index (room, peripheral_type)
---   Note : assigned_device_id est deja indexe (IDX_PERIPHERAL_DEVICE)
-CREATE INDEX IDX_PERIPH_ROOM ON PERIPHERAL(room_id)            TABLESPACE IDX_CERGY;
-CREATE INDEX IDX_PERIPH_TYPE ON PERIPHERAL(peripheral_type_id) TABLESPACE IDX_CERGY;
+-- DEVICE : FK réseau (sert dans V_NETWORK_TOPOLOGY)
+CREATE INDEX idx_device_switch ON DEVICE(switch_id)     TABLESPACE IDX_CERGY;
+CREATE INDEX idx_device_vlan   ON DEVICE(vlan_id)       TABLESPACE IDX_CERGY;
+CREATE INDEX idx_device_os     ON DEVICE(os_version_id) TABLESPACE IDX_CERGY;
 
--- ROOM, NETWORK_SWITCH, OS_VERSION : 1 FK chacune sans index
-CREATE INDEX IDX_ROOM_BUILDING    ON ROOM(building_id)         TABLESPACE IDX_CERGY;
-CREATE INDEX IDX_SWITCH_ROOM      ON NETWORK_SWITCH(room_id)   TABLESPACE IDX_CERGY;
-CREATE INDEX IDX_OS_VERSION_FAM   ON OS_VERSION(os_family_id)  TABLESPACE IDX_CERGY;
+-- PERIPHERAL : FK vers ROOM et PERIPHERAL_TYPE
+CREATE INDEX idx_periph_room ON PERIPHERAL(room_id)            TABLESPACE IDX_CERGY;
+CREATE INDEX idx_periph_type ON PERIPHERAL(peripheral_type_id) TABLESPACE IDX_CERGY;
 
--- ----------------------------------------------------------------
--- (B) Index metier (justifies par requetes existantes)
--- ----------------------------------------------------------------
+-- autres FK
+CREATE INDEX idx_room_building ON ROOM(building_id)        TABLESPACE IDX_CERGY;
+CREATE INDEX idx_switch_room   ON NETWORK_SWITCH(room_id)  TABLESPACE IDX_CERGY;
+CREATE INDEX idx_osversion_fam ON OS_VERSION(os_family_id) TABLESPACE IDX_CERGY;
 
--- B.1 -- V_ACTIVE_TICKETS (01_setup_cergy.sql:249-264) :
---   WHERE site_id=1 AND ticket_status IN ('OPEN','IN_PROGRESS')
---   ORDER BY opened_at DESC
--- IDX_TICKET_STATUS existe deja mais ne couvre que le filtre.
--- Composite (status, opened_at) => Oracle peut servir filtre + tri
--- sans operation SORT additionnelle.
-CREATE INDEX IDX_TICKET_STATUS_OPEN
-  ON MAINTENANCE_TICKET(ticket_status, opened_at)
-  TABLESPACE IDX_CERGY;
 
--- B.2 -- Reports "devices in repair / retired"
--- Cardinalite = 4 valeurs mais distribution biaisee (la plupart IN_SERVICE).
--- Un index B-tree standard suffit pour les queries qui filtrent les
--- minorites (IN_REPAIR, RETIRED).
-CREATE INDEX IDX_DEVICE_STATUS ON DEVICE(device_status) TABLESPACE IDX_CERGY;
+-- index "métier" : colonnes souvent filtrées.
+-- IDX_TICKET_STATUS existe déjà (cf. 01), on ajoute un composite avec opened_at
+-- pour servir le ORDER BY de V_ACTIVE_TICKETS sans trier en plus.
+CREATE INDEX idx_device_status      ON DEVICE(device_status)                          TABLESPACE IDX_CERGY;
+CREATE INDEX idx_ticket_status_open ON MAINTENANCE_TICKET(ticket_status, opened_at)   TABLESPACE IDX_CERGY;
 
--- B.3 -- Trouver l'affectation active courante d'un device
--- Index fonctionnel : NULL exclu du B-tree standard, donc en indexant
--- (CASE WHEN returned_at IS NULL THEN device_id END) on obtient un
--- index ne contenant QUE les affectations actives (≈ nb de devices
--- en service), 5 a 10x plus petit qu'un index plein.
-CREATE INDEX IDX_ASSIGN_ACTIVE
-  ON DEVICE_ASSIGNMENT(CASE WHEN returned_at IS NULL THEN device_id END)
-  TABLESPACE IDX_CERGY;
 
+<<<<<<< HEAD
 -- B.4 -- Reports "personnes actives par role"
 -- Composite : permet filter + group by sans full scan.
 CREATE INDEX IDX_PERSON_STATUS_ROLE
@@ -156,37 +138,36 @@ CREATE INDEX idx_ticket_status_open ON MAINTENANCE_TICKET(ticket_status, opened_
 -- màj des stats (sinon le planificateur peut ignorer les nouveaux index)
 BEGIN DBMS_STATS.GATHER_SCHEMA_STATS(USER); END;
 >>>>>>> users/FA_archi
+=======
+-- màj des stats (sinon le planificateur peut ignorer les nouveaux index)
+BEGIN DBMS_STATS.GATHER_SCHEMA_STATS(USER); END;
+>>>>>>> bf885b7 (simplification, partie 1)
 /
 
 
 -- ============================================================
 <<<<<<< HEAD
+<<<<<<< HEAD
 -- PARTIE 2 : SITE PAU
+=======
+-- Pau (mêmes index sur les tables locales)
+>>>>>>> bf885b7 (simplification, partie 1)
 -- ============================================================
 CONNECT CYTECH_PAU/pau2026@//localhost:1521/FREEPDB1
 
--- ----------------------------------------------------------------
--- (A) Index sur FK non indexees
--- ----------------------------------------------------------------
--- DEVICE : meme cas que Cergy + on garde la coherence
-CREATE INDEX IDX_DEVICE_SWITCH ON DEVICE(switch_id)     TABLESPACE IDX_PAU;
-CREATE INDEX IDX_DEVICE_VLAN   ON DEVICE(vlan_id)       TABLESPACE IDX_PAU;
-CREATE INDEX IDX_DEVICE_OS     ON DEVICE(os_version_id) TABLESPACE IDX_PAU;
+CREATE INDEX idx_device_switch ON DEVICE(switch_id)     TABLESPACE IDX_PAU;
+CREATE INDEX idx_device_vlan   ON DEVICE(vlan_id)       TABLESPACE IDX_PAU;
+CREATE INDEX idx_device_os     ON DEVICE(os_version_id) TABLESPACE IDX_PAU;
 
--- PERIPHERAL : 2 FK sans index
-CREATE INDEX IDX_PERIPH_ROOM ON PERIPHERAL(room_id)            TABLESPACE IDX_PAU;
-CREATE INDEX IDX_PERIPH_TYPE ON PERIPHERAL(peripheral_type_id) TABLESPACE IDX_PAU;
+CREATE INDEX idx_periph_room ON PERIPHERAL(room_id)            TABLESPACE IDX_PAU;
+CREATE INDEX idx_periph_type ON PERIPHERAL(peripheral_type_id) TABLESPACE IDX_PAU;
 
--- ROOM, NETWORK_SWITCH
-CREATE INDEX IDX_ROOM_BUILDING ON ROOM(building_id)       TABLESPACE IDX_PAU;
-CREATE INDEX IDX_SWITCH_ROOM   ON NETWORK_SWITCH(room_id) TABLESPACE IDX_PAU;
+CREATE INDEX idx_room_building ON ROOM(building_id)       TABLESPACE IDX_PAU;
+CREATE INDEX idx_switch_room   ON NETWORK_SWITCH(room_id) TABLESPACE IDX_PAU;
 
--- ----------------------------------------------------------------
--- (B) Index metier
--- ----------------------------------------------------------------
--- B.1 -- Pas de MAINTENANCE_TICKET local sur Pau (table sur Cergy)
---        donc pas d'index ticket cote Pau.
+CREATE INDEX idx_device_status ON DEVICE(device_status) TABLESPACE IDX_PAU;
 
+<<<<<<< HEAD
 -- B.2 -- Devices in repair / retired (V_NETWORK_TOPOLOGY)
 CREATE INDEX IDX_DEVICE_STATUS ON DEVICE(device_status) TABLESPACE IDX_PAU;
 
@@ -225,10 +206,14 @@ CREATE INDEX idx_device_status ON DEVICE(device_status) TABLESPACE IDX_PAU;
 
 BEGIN DBMS_STATS.GATHER_SCHEMA_STATS(USER); END;
 >>>>>>> users/FA_archi
+=======
+BEGIN DBMS_STATS.GATHER_SCHEMA_STATS(USER); END;
+>>>>>>> bf885b7 (simplification, partie 1)
 /
 
 
 -- ============================================================
+<<<<<<< HEAD
 <<<<<<< HEAD
 -- VERIFICATION
 -- ============================================================
@@ -236,18 +221,18 @@ BEGIN DBMS_STATS.GATHER_SCHEMA_STATS(USER); END;
 --   SELECT index_name, table_name, uniqueness, status
 --   FROM user_indexes
 --   ORDER BY table_name, index_name;
+=======
+-- vérif rapide :
+--   SELECT index_name, table_name FROM user_indexes ORDER BY table_name;
+>>>>>>> bf885b7 (simplification, partie 1)
 --
--- Verifier l'index fonctionnel :
---   SELECT index_name, column_expression
---   FROM user_ind_expressions
---   WHERE index_name = 'IDX_ASSIGN_ACTIVE';
---
--- Verifier qu'un index est bien utilise (apres GATHER_STATS) :
+-- test EXPLAIN PLAN avant/après pour le rapport :
 --   EXPLAIN PLAN FOR
 --     SELECT * FROM MAINTENANCE_TICKET
---     WHERE ticket_status IN ('OPEN','IN_PROGRESS')
---     ORDER BY opened_at DESC;
+--      WHERE ticket_status IN ('OPEN','IN_PROGRESS')
+--      ORDER BY opened_at DESC;
 --   SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY);
+<<<<<<< HEAD
 --   -- On doit voir : INDEX RANGE SCAN IDX_TICKET_STATUS_OPEN
 =======
 -- vérif rapide :
@@ -261,3 +246,6 @@ BEGIN DBMS_STATS.GATHER_SCHEMA_STATS(USER); END;
 --   SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY);
 -- ============================================================
 >>>>>>> users/FA_archi
+=======
+-- ============================================================
+>>>>>>> bf885b7 (simplification, partie 1)
